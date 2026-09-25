@@ -7,9 +7,10 @@ import { api } from "@/lib/client-api";
 import type { StickerPatch } from "@/lib/sticker-draft";
 import type { Album, Sticker, StickerKind } from "@/lib/types";
 import { KIND_INFO, STICKER_KINDS } from "@/lib/types";
+import { ArrowLeft, ArrowRight, ICON, Plus, Sparkle, Star } from "./icons";
 import { StickerCard, type JobState } from "./StickerCard";
 import { StickerFields } from "./StickerFields";
-import { Button, Card, ErrorNote, Spinner } from "./ui";
+import { Button, BUTTON_BASE, Card, ErrorNote, Spinner, VARIANTS } from "./ui";
 
 type Step = "theme" | "ideas" | "stickers" | "export";
 
@@ -233,6 +234,14 @@ export function AlbumWorkspace({
   const selectedIdeas = ideas.filter((s) => selected.has(s.id));
   const runningCount = Object.keys(jobs).length;
 
+  // Derived rather than stored, so it cannot drift out of sync with the queue.
+  // A live region is not announced on mount, only when it changes, so the idle
+  // wording doubles as the "finished" announcement. The per-sticker overlay
+  // ticks its elapsed seconds and is deliberately left out of the region.
+  const progressMessage = runningCount
+    ? `${runningCount} sticker${runningCount > 1 ? "s" : ""} en cours de génération.`
+    : "Aucune génération en cours.";
+
   const steps: { id: Step; label: string; count?: number }[] = [
     { id: "theme", label: "Thème" },
     { id: "ideas", label: "Idées", count: ideas.length },
@@ -244,26 +253,34 @@ export function AlbumWorkspace({
     <div className="space-y-6 pb-24">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link href="/" className="text-sm font-semibold text-ink-soft hover:text-terracotta">
-            ← Mes albums
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-ink-soft hover:text-action"
+          >
+            <ArrowLeft {...ICON} size={16} />
+            Mes albums
           </Link>
           <h1 className="font-display text-3xl font-semibold text-navy">{album.name}</h1>
         </div>
         {runningCount > 0 && (
           <span className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-sm">
-            <Spinner className="text-terracotta" /> {runningCount} en cours
+            <Spinner className="text-action" /> {runningCount} en cours
           </span>
         )}
       </div>
 
-      <nav className="grid grid-cols-4 gap-1 rounded-full bg-white p-1 shadow-sm" aria-label="Étapes">
+      <p role="status" aria-live="polite" className="sr-only">
+        {progressMessage}
+      </p>
+
+      <nav className="flex gap-1 rounded-full bg-white p-1 shadow-sm" aria-label="Étapes">
         {steps.map((s, i) => (
           <button
             key={s.id}
             type="button"
             onClick={() => setStep(s.id)}
             aria-current={step === s.id ? "step" : undefined}
-            className={`flex items-center justify-center gap-2 rounded-full px-2 py-2 text-sm font-semibold transition ${
+            className={`flex flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-full px-2 py-2 text-sm font-semibold transition ${
               step === s.id ? "bg-navy text-white" : "text-ink-soft hover:bg-cream"
             }`}
           >
@@ -332,14 +349,16 @@ export function AlbumWorkspace({
               <ul className="grid gap-3 lg:grid-cols-2">
                 {ideas.map((sticker) => (
                   <li key={sticker.id}>
+                    {/* border-action! : Card already sets border-line, and Tailwind emits
+                        colour utilities alphabetically, so action would lose to line. */}
                     <Card
-                      className={`p-4 transition ${selected.has(sticker.id) ? "border-terracotta ring-2 ring-terracotta/20" : ""}`}
+                      className={`p-4 transition ${selected.has(sticker.id) ? "border-action! ring-2 ring-action/20" : ""}`}
                     >
                       <div className="mb-3 flex items-center justify-between">
                         <label className="flex items-center gap-2 text-sm font-semibold">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 accent-terracotta"
+                            className="h-4 w-4 accent-action"
                             checked={selected.has(sticker.id)}
                             onChange={(e) =>
                               setSelected((sel) => {
@@ -378,13 +397,14 @@ export function AlbumWorkspace({
 
           {selectedIdeas.length > 0 && (
             <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-              <div className="flex items-center gap-4 rounded-full bg-navy py-2 pl-5 pr-2 text-white shadow-xl">
+              <div className="on-dark flex items-center gap-4 rounded-full bg-navy py-2 pl-5 pr-2 text-white shadow-xl">
                 <span className="text-sm">
                   {selectedIdeas.length} idée{selectedIdeas.length > 1 ? "s" : ""} sélectionnée
                   {selectedIdeas.length > 1 ? "s" : ""}
                 </span>
                 <Button variant="primary" onClick={generateSelected}>
-                  Générer →
+                  Générer
+                  <ArrowRight {...ICON} />
                 </Button>
               </div>
             </div>
@@ -404,7 +424,7 @@ export function AlbumWorkspace({
           <div className="space-y-3">
             <p className="text-sm text-ink-soft">
               Mets une étoile aux stickers à garder. Génération : {imageSettings}.{" "}
-              <Link href="/style" className="underline hover:text-terracotta">
+              <Link href="/style" className="underline hover:text-action">
                 Modifier
               </Link>
             </p>
@@ -489,7 +509,8 @@ function ThemeStep({
           Supprimer l&apos;album
         </Button>
         <Button variant="primary" onClick={save} disabled={busy || !name.trim()}>
-          {busy && <Spinner />} Enregistrer et passer aux idées →
+          {busy && <Spinner />} Enregistrer et passer aux idées
+          <ArrowRight {...ICON} />
         </Button>
       </div>
     </Card>
@@ -529,7 +550,10 @@ function IdeaGenerator({
   return (
     <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
       <Card className="space-y-3 p-4">
-        <h2 className="font-display text-lg font-semibold">✨ Suggestions</h2>
+        <h2 className="font-display flex items-center gap-1.5 text-lg font-semibold">
+          <Sparkle {...ICON} />
+          Suggestions
+        </h2>
         {!hasTheme && (
           <p className="text-sm text-ink-soft">
             Astuce : remplis le thème de l&apos;album (étape 1) pour des idées bien plus précises.
@@ -556,7 +580,10 @@ function IdeaGenerator({
         {error && <ErrorNote message={error} onClose={() => setError(null)} />}
       </Card>
       <Card className="space-y-3 p-4">
-        <h2 className="font-display text-lg font-semibold">➕ À la main</h2>
+        <h2 className="font-display flex items-center gap-1.5 text-lg font-semibold">
+          <Plus {...ICON} />
+          À la main
+        </h2>
         <div className="grid grid-cols-2 gap-1.5">
           {STICKER_KINDS.map((kind) => (
             <button
@@ -564,7 +591,7 @@ function IdeaGenerator({
               type="button"
               onClick={() => onAdd(kind)}
               title={KIND_INFO[kind].hint}
-              className="rounded-xl border border-line bg-cream px-2 py-2 text-left text-sm font-semibold hover:border-terracotta"
+              className="rounded-xl border border-line bg-cream px-2 py-2 text-left text-sm font-semibold hover:border-action"
             >
               {KIND_INFO[kind].emoji} {KIND_INFO[kind].label}
             </button>
@@ -594,9 +621,10 @@ function ExportStep({ album, favorites }: { album: Album; favorites: number }) {
         {favorites > 0 ? (
           <a
             href={`/api/albums/${album.id}/export?scope=favorites`}
-            className="inline-flex items-center gap-1.5 rounded-full bg-terracotta px-4 py-2 font-semibold text-white shadow-[0_3px_0_var(--color-terracotta-dark)]"
+            className={`${BUTTON_BASE} px-4 py-2 ${VARIANTS.primary}`}
           >
-            ★ Mes {favorites} favoris (.zip)
+            <Star {...ICON} weight="fill" />
+            Mes {favorites} favoris (.zip)
           </a>
         ) : (
           <span className="rounded-full bg-cream px-4 py-2 text-sm text-ink-soft">
@@ -606,7 +634,7 @@ function ExportStep({ album, favorites }: { album: Album; favorites: number }) {
         {generated > 0 && (
           <a
             href={`/api/albums/${album.id}/export`}
-            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-4 py-2 font-semibold"
+            className={`${BUTTON_BASE} px-4 py-2 ${VARIANTS.secondary}`}
           >
             Tous les stickers ({generated}) (.zip)
           </a>

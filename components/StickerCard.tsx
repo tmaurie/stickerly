@@ -7,6 +7,7 @@ import { stickerFileName } from "@/lib/slug";
 import type { StickerPatch } from "@/lib/sticker-draft";
 import type { Sticker, StickerKind } from "@/lib/types";
 import { currentVersion, KIND_INFO } from "@/lib/types";
+import { ArrowsClockwise, DownloadSimple, ICON, PencilSimple, Star } from "./icons";
 import { StickerFields } from "./StickerFields";
 import { Button, ErrorNote } from "./ui";
 
@@ -89,13 +90,14 @@ export function StickerCard({
         <button
           type="button"
           onClick={() => onChange({ favorite: !sticker.favorite })}
-          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full text-lg shadow transition ${
-            sticker.favorite ? "bg-terracotta text-white" : "bg-white/90 text-ink-soft hover:text-terracotta"
+          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full shadow transition ${
+            sticker.favorite ? "bg-action text-white" : "bg-white/90 text-ink-soft hover:text-action"
           }`}
           aria-pressed={sticker.favorite}
+          aria-label={sticker.favorite ? "Retirer des favoris" : "Garder (favori)"}
           title={sticker.favorite ? "Retirer des favoris" : "Garder (favori)"}
         >
-          {sticker.favorite ? "★" : "☆"}
+          <Star {...ICON} weight={sticker.favorite ? "fill" : "bold"} />
         </button>
         <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-xs font-semibold text-ink-soft shadow">
           {info.emoji} {info.label}
@@ -111,7 +113,7 @@ export function StickerCard({
               onClick={() => onChange({ currentVersionId: v.id })}
               title={v.instruction ? `V${i + 1} : ${v.instruction}` : `Version ${i + 1}`}
               className={`checker h-11 w-11 shrink-0 overflow-hidden rounded-lg border-2 ${
-                v.id === version?.id ? "border-terracotta" : "border-transparent opacity-70 hover:opacity-100"
+                v.id === version?.id ? "border-action" : "border-transparent opacity-70 hover:opacity-100"
               }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -134,10 +136,12 @@ export function StickerCard({
 
         <div className="mt-auto flex flex-wrap gap-1.5">
           <Button size="sm" variant="primary" disabled={busy} onClick={() => onGenerate()} title="Même description, nouvelle image">
-            ↻ Autre version
+            <ArrowsClockwise {...ICON} />
+            Autre version
           </Button>
           <Button size="sm" disabled={busy || !version} onClick={() => toggle("adjust")} aria-expanded={panel === "adjust"}>
-            ✎ Ajuster
+            <PencilSimple {...ICON} />
+            Ajuster
           </Button>
           <Button size="sm" variant="ghost" onClick={() => toggle("edit")} aria-expanded={panel === "edit"}>
             Description
@@ -149,9 +153,10 @@ export function StickerCard({
             <a
               href={imageUrl(albumId, version.file, stickerFileName(index, label))}
               className="inline-flex items-center rounded-full px-3 py-1.5 text-sm font-semibold text-ink-soft hover:bg-cream hover:text-ink"
+              aria-label="Télécharger le PNG"
               title="Télécharger le PNG"
             >
-              ⬇
+              <DownloadSimple {...ICON} />
             </a>
           )}
         </div>
@@ -165,7 +170,7 @@ export function StickerCard({
                   key={s}
                   type="button"
                   onClick={() => adjust(s)}
-                  className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold hover:border-terracotta hover:text-terracotta"
+                  className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold hover:border-action hover:text-action"
                 >
                   {s}
                 </button>

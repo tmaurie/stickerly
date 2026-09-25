@@ -5,6 +5,7 @@ import { photoUrl } from "@/lib/client-api";
 import type { StickerPatch } from "@/lib/sticker-draft";
 import type { Sticker } from "@/lib/types";
 import { KIND_INFO, STICKER_KINDS } from "@/lib/types";
+import { Camera, ICON, X } from "./icons";
 import { Spinner } from "./ui";
 
 export function StickerFields({
@@ -85,7 +86,7 @@ export function StickerFields({
         <label className="flex items-center gap-2 text-sm font-semibold">
           <input
             type="checkbox"
-            className="h-4 w-4 accent-terracotta"
+            className="h-4 w-4 accent-action"
             checked={sticker.outline}
             onChange={(e) => onChange({ outline: e.target.checked })}
           />
@@ -100,10 +101,10 @@ export function StickerFields({
               <button
                 type="button"
                 onClick={() => onRemovePhoto(file)}
-                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-ink text-xs text-white group-hover:flex"
+                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-ink text-white group-hover:flex"
                 aria-label="Retirer la photo"
               >
-                ×
+                <X size={12} weight="bold" aria-hidden />
               </button>
             </span>
           ))}
@@ -111,10 +112,10 @@ export function StickerFields({
             type="button"
             onClick={() => fileInput.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-1.5 rounded-full border border-dashed border-ink-soft/40 px-3 py-1 text-sm text-ink-soft hover:border-terracotta hover:text-terracotta"
+            className="flex items-center gap-1.5 rounded-full border border-dashed border-ink-soft/40 px-3 py-1 text-sm text-ink-soft hover:border-action hover:text-action"
             title="Une photo aide à reproduire un visage, un lieu ou un objet précis"
           >
-            {uploading ? <Spinner /> : "📷"} Photo de référence
+            {uploading ? <Spinner /> : <Camera {...ICON} />} Photo de référence
           </button>
           <input
             ref={fileInput}

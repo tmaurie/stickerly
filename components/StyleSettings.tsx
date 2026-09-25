@@ -77,7 +77,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
               <input
                 type="radio"
                 name="model"
-                className="mt-1 accent-terracotta"
+                className="mt-1 accent-action"
                 checked={settings.model === m.id}
                 onChange={() => set("model", m.id)}
               />
@@ -113,7 +113,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
           <label className="flex items-center gap-2 text-sm font-semibold">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-terracotta"
+              className="h-4 w-4 accent-action"
               checked={settings.useReferences}
               onChange={(e) => set("useReferences", e.target.checked)}
             />
@@ -177,7 +177,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
 
       {dirty && (
         <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-full bg-navy py-2 pl-5 pr-2 text-white shadow-xl">
+          <div className="on-dark flex items-center gap-3 rounded-full bg-navy py-2 pl-5 pr-2 text-white shadow-xl">
             <span className="text-sm">Modifications non enregistrées</span>
             <Button variant="ghost" className="text-white/80 hover:bg-white/10 hover:text-white" onClick={() => setSettings(saved)}>
               Annuler

@@ -5,6 +5,10 @@ import { FAKE_AI } from "@/lib/ai";
 import { imageUrl } from "@/lib/client-api";
 import { listAlbums } from "@/lib/storage";
 
+// previews is capped at 4 by listAlbums; the grid matches the count so short
+// albums don't render empty columns. Written out so Tailwind detects the classes.
+const PREVIEW_COLS = ["", "grid-cols-1", "grid-cols-2", "grid-cols-3", "grid-cols-4"];
+
 const STEPS = [
   ["1", "Le thème", "Raconte l'album : lieux, personnes, anecdotes."],
   ["2", "Les idées", "Stickerly propose des stickers, tu tries et tu retouches."],
@@ -64,18 +68,22 @@ export default async function Home() {
                   href={`/albums/${album.id}`}
                   className="group block overflow-hidden rounded-blob border border-line bg-white transition hover:-translate-y-0.5 hover:shadow-lg"
                 >
-                  <div className="checker grid h-40 grid-cols-4 items-center gap-1 p-3">
+                  <div className="checker h-40 p-3">
                     {album.previews.length ? (
-                      album.previews.map((file) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={file} src={imageUrl(album.id, file)} alt="" className="h-full w-full object-contain" />
-                      ))
+                      <div className={`grid h-full items-center gap-1 ${PREVIEW_COLS[album.previews.length]}`}>
+                        {album.previews.map((file) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img key={file} src={imageUrl(album.id, file)} alt="" className="h-full w-full object-contain" />
+                        ))}
+                      </div>
                     ) : (
-                      <span className="col-span-4 text-center text-sm text-ink-soft">Aucun sticker pour l&apos;instant</span>
+                      <p className="flex h-full items-center justify-center text-sm text-ink-soft">
+                        Aucun sticker pour l&apos;instant
+                      </p>
                     )}
                   </div>
                   <div className="p-4">
-                    <h3 className="font-display text-lg font-semibold group-hover:text-terracotta">{album.name}</h3>
+                    <h3 className="font-display text-lg font-semibold group-hover:text-action">{album.name}</h3>
                     <p className="line-clamp-2 text-sm text-ink-soft">{album.theme || "Pas de thème"}</p>
                     <p className="mt-2 text-xs font-semibold text-sage">
                       {album.stickerCount} sticker{album.stickerCount > 1 ? "s" : ""}
