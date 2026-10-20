@@ -1,15 +1,11 @@
 import { UserFacingError } from "@/lib/ai";
 import { handle } from "@/lib/http";
 import { deleteAsset, findSticker, isSafeName, newId, saveAsset, updateAlbum } from "@/lib/storage";
+import { IMAGE_EXTENSIONS, imageRejection } from "@/lib/upload";
 
 type Ctx = RouteContext<"/api/albums/[id]/stickers/[sid]/photos">;
 
 const MAX_PHOTOS = 4;
-const EXTENSIONS: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 /** Reference photos (people, places) attached to one sticker. */
 export const POST = handle(async (request: Request, ctx: Ctx) => {
@@ -20,9 +16,9 @@ export const POST = handle(async (request: Request, ctx: Ctx) => {
 
   const saved: string[] = [];
   for (const file of files) {
-    const ext = EXTENSIONS[file.type];
-    if (!ext) throw new UserFacingError(`Format non pris en charge : ${file.name} (PNG, JPG ou WebP).`);
-    const name = `${sid}-${newId()}.${ext}`;
+    const rejection = imageRejection(file);
+    if (rejection) throw new UserFacingError(rejection);
+    const name = `${sid}-${newId()}.${IMAGE_EXTENSIONS[file.type]}`;
     await saveAsset(id, "photos", name, Buffer.from(await file.arrayBuffer()));
     saved.push(name);
   }

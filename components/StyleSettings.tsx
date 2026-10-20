@@ -1,22 +1,23 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { api, referenceUrl } from "@/lib/client-api";
-import type { ImageModelId, ImageQuality, Settings, StickerKind } from "@/lib/types";
-import { KIND_INFO, STICKER_KINDS } from "@/lib/types";
+import type { ImageQuality, Settings, StickerKind } from "@/lib/types";
+import {
+  IMAGE_MODELS,
+  IMAGE_QUALITIES,
+  KIND_INFO,
+  MODEL_INFO,
+  QUALITY_INFO,
+  STICKER_KINDS,
+} from "@/lib/types";
 import { Button, Card, ErrorNote, Spinner } from "./ui";
 
-const MODELS: { id: ImageModelId; label: string; hint: string }[] = [
-  { id: "gpt-image-2.5-flare", label: "Flare", hint: "Rapide, très bon au quotidien" },
-  { id: "gpt-image-2.5-sunburst", label: "Sunburst", hint: "Plus précis, idéal pour les retouches" },
-];
-
-const QUALITIES: { id: ImageQuality; label: string }[] = [
-  { id: "low", label: "Brouillon" },
-  { id: "medium", label: "Moyenne" },
-  { id: "high", label: "Haute (conseillée)" },
-  { id: "xhigh", label: "Très haute (plus lente et plus chère)" },
-];
+// Built from the shared tables so this page and the album workspace cannot
+// drift into calling the same model two different things.
+const MODELS = IMAGE_MODELS.map((id) => ({ id, ...MODEL_INFO[id] }));
+const QUALITIES = IMAGE_QUALITIES.map((id) => ({ id, label: QUALITY_INFO[id].label }));
 
 export function StyleSettings({ initial, defaultStyle }: { initial: Settings; defaultStyle: string }) {
   const [settings, setSettings] = useState(initial);
@@ -147,14 +148,24 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
           <p className="text-sm text-ink-soft">Aucune image trouvée dans references/.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {references.map(([file, kind]) => (
+            {references.map(([file, kind], i) => (
               <li key={file} className={`space-y-1.5 ${kind === "none" ? "opacity-50" : ""}`}>
-                <div className="checker aspect-square overflow-hidden rounded-xl border border-line">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={referenceUrl(file)} alt={file} className="h-full w-full object-contain p-1" loading="lazy" />
+                {/* The alt used to be the raw filename, which a screen reader
+                    read out as "ChatGPT Image 16 sept 2026 19_19_28.png". The
+                    position in the grid is the only part of that which helps,
+                    and it is what the select below is numbered by too. */}
+                <div className="checker relative aspect-square overflow-hidden rounded-xl border border-line">
+                  <Image
+                    src={referenceUrl(file)}
+                    alt={`Exemple de référence ${i + 1}`}
+                    fill
+                    sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 200px"
+                    className="object-contain p-1"
+                  />
                 </div>
                 <select
                   className="field py-1 text-xs"
+                  aria-label={`Type de l'exemple ${i + 1}`}
                   value={kind}
                   onChange={(e) =>
                     set("references", { ...settings.references, [file]: e.target.value as StickerKind | "none" })

@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import OpenAI, { toFile } from "openai";
 import type { ImagesResponse } from "openai/resources/images";
-import { clearTransparentPixels } from "./image";
+import { clearTransparentPixels, shrinkForVision } from "./image";
 import { listReferenceFiles, REFERENCES_DIR } from "./storage";
-import type { ImageModelId, ImageQuality, StickerDraft } from "./types";
-import { STICKER_KINDS } from "./types";
+import type { ImageModelId, ImageQuality, StickerDraft, StickerKind } from "./types";
+import { KIND_INFO, STICKER_KINDS } from "./types";
 
 /** Demo mode: no API calls, returns reference images and canned ideas. */
 export const FAKE_AI = process.env.STICKERLY_FAKE_AI === "1";
@@ -122,11 +122,13 @@ async function fakeRender(opts: RenderOptions): Promise<{ png: Buffer; costUsd?:
   return { png: await readFile(path.join(REFERENCES_DIR, first)), costUsd: 0 };
 }
 
-/* ---------- Idea suggestions ---------- */
+/* ---------- Reading and suggesting sticker descriptions ---------- */
 
-const IDEAS_INSTRUCTIONS = `Tu aides à illustrer des albums photo avec des stickers en pâte à modeler 3D (style figurines d'argile, mignon, couleurs fraîches). Tu proposes des idées de stickers pour l'album décrit.
+const CLAY_CONTEXT =
+  "Tu aides à illustrer des albums photo avec des stickers en pâte à modeler 3D (style figurines d'argile, mignon, couleurs fraîches).";
 
-Les 4 types possibles :
+/** What each type expects in `text`, `subject` and `details`: the ideas and the image reading fill the same fields. */
+const KIND_RULES = `Les 4 types possibles :
 - "badge" : vignette souvenir d'un lieu (ville, site, monument, région, parc, château…) avec son nom en bas.
   text = le nom tel qu'il apparaîtra, en MAJUSCULES (nom français ou local selon l'usage, ex. "FLORENCE", "TOSCANA", "CINQUE TERRE").
   subject = description visuelle précise de la scène : monuments emblématiques reconnaissables, architecture, éléments typiques (bateaux, végétation, eau, ponts).
@@ -138,13 +140,38 @@ Les 4 types possibles :
 - "motif" : petit élément décoratif (objet, plat, fleur, animal, symbole), sans texte. text = "". Peut avoir de petits visages kawaii.
 - "portrait" : les personnes de l'album en figurines, dans un moment marquant. text = courte légende en MAJUSCULES. subject = qui (avec leur apparence si elle est décrite) et ce qu'ils font. Ne propose ce type que si l'album mentionne des personnes.
 
-outline = true pour un contour blanc découpé autour du sticker (presque toujours pour badge, motif et portrait ; au choix pour title).
+outline = true pour un contour blanc découpé autour du sticker (presque toujours pour badge, motif et portrait ; au choix pour title).`;
+
+const IDEAS_INSTRUCTIONS = `${CLAY_CONTEXT} Tu proposes des idées de stickers pour l'album décrit.
+
+${KIND_RULES}
 
 Règles :
 - Idées concrètes, visuellement précises et fidèles au thème (lieux réellement visités, activités, plats, anecdotes mentionnées).
 - Varie les types, sauf si la consigne demande autre chose.
 - Ne répète pas un sticker déjà présent dans l'album.
 - subject et details en français, 1 à 2 phrases chacun.`;
+
+const DESCRIBE_INSTRUCTIONS = `${CLAY_CONTEXT} On te donne une image fournie par l'utilisateur et le type de sticker à en tirer. Tu remplis les champs du sticker à partir de ce que montre l'image, pour qu'il soit ensuite redessiné dans ce style.
+
+${KIND_RULES}
+
+Règles :
+- Décris ce que l'image montre vraiment : les personnes (combien, cheveux, lunettes, barbe, tenue), le lieu, les monuments, les objets, l'ambiance. N'invente rien qui n'y soit pas visible.
+- Simplifie : garde ce qui rend la scène reconnaissable et laisse tomber le reste. Un sticker ne reproduit pas une photo, il en garde l'essentiel.
+- Respecte le type demandé même si l'image s'y prête mal : adapte-toi (pour un "badge" par exemple, prends le lieu de l'image comme sujet et son nom comme texte).
+- text : un nom lisible sur l'image ou déductible du thème de l'album. Si rien ne s'impose, laisse "" (et toujours "" pour un motif).
+- subject et details en français, 1 à 2 phrases chacun.`;
+
+/** The editable fields of a sticker, as the model returns them. */
+const DRAFT_FIELDS = {
+  text: { type: "string" },
+  subject: { type: "string" },
+  details: { type: "string" },
+  outline: { type: "boolean" },
+} as const;
+
+const DRAFT_KEYS = ["text", "subject", "details", "outline"] as const;
 
 const IDEAS_SCHEMA = {
   type: "object",
@@ -156,17 +183,22 @@ const IDEAS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["kind", "text", "subject", "details", "outline"],
+        required: ["kind", ...DRAFT_KEYS],
         properties: {
           kind: { type: "string", enum: STICKER_KINDS },
-          text: { type: "string" },
-          subject: { type: "string" },
-          details: { type: "string" },
-          outline: { type: "boolean" },
+          ...DRAFT_FIELDS,
         },
       },
     },
   },
+} as const;
+
+/** The same fields minus `kind`: the user picks the type before the image is read. */
+const DESCRIBE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: DRAFT_KEYS,
+  properties: DRAFT_FIELDS,
 } as const;
 
 export async function suggestIdeas(input: {
@@ -225,4 +257,63 @@ function fakeIdeas(count: number): StickerDraft[] {
     },
   ];
   return Array.from({ length: count }, (_, i) => samples[i % samples.length]);
+}
+
+export type StickerDescription = Omit<StickerDraft, "kind">;
+
+/**
+ * Turns an uploaded image into the description of a sticker of `kind`.
+ *
+ * It describes, it does not draw: the sticker is then generated from these
+ * fields like any other, so the image never becomes the sticker itself and the
+ * result stays editable, adjustable and regenerable.
+ */
+export async function describeImage(input: {
+  image: Buffer;
+  kind: StickerKind;
+  albumName: string;
+  theme: string;
+}): Promise<StickerDescription> {
+  if (FAKE_AI) return fakeDescription(input.kind);
+
+  const jpeg = await shrinkForVision(input.image);
+  const info = KIND_INFO[input.kind];
+  const response = await openai().responses.create({
+    model: TEXT_MODEL,
+    instructions: DESCRIBE_INSTRUCTIONS,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `Type de sticker demandé : "${input.kind}" (${info.label} — ${info.hint}).
+Album : ${input.albumName}
+Thème et contexte : ${input.theme || "(non précisé)"}
+
+Remplis les champs du sticker à partir de l'image ci-dessous.`,
+          },
+          {
+            type: "input_image",
+            image_url: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
+            detail: "auto",
+          },
+        ],
+      },
+    ],
+    text: {
+      format: { type: "json_schema", name: "sticker_from_image", strict: true, schema: DESCRIBE_SCHEMA },
+    },
+  });
+
+  return JSON.parse(response.output_text) as StickerDescription;
+}
+
+function fakeDescription(kind: StickerKind): StickerDescription {
+  return {
+    text: kind === "motif" ? "" : "MODE DÉMO",
+    subject: "Ce que montre l'image (mode démo : elle n'a pas été lue)",
+    details: "Mode démo : décris le sticker toi-même, puis relance la génération",
+    outline: KIND_INFO[kind].defaultOutline,
+  };
 }

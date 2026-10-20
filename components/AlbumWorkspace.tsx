@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client-api";
+import { formatUsd } from "@/lib/format";
+import { stagger } from "@/lib/stagger";
 import type { StickerPatch } from "@/lib/sticker-draft";
 import type { Album, Sticker, StickerKind } from "@/lib/types";
 import { KIND_INFO, STICKER_KINDS } from "@/lib/types";
 import { ArrowLeft, ArrowRight, ICON, Plus, Sparkle, Star } from "./icons";
+import { ImageToSticker } from "./ImageToSticker";
 import { StickerCard, type JobState } from "./StickerCard";
 import { StickerFields } from "./StickerFields";
-import { Button, BUTTON_BASE, Card, ErrorNote, Spinner, VARIANTS } from "./ui";
+import { Button, BUTTON_BASE, Card, ConfirmButton, ErrorNote, Spinner, VARIANTS } from "./ui";
 
 type Step = "theme" | "ideas" | "stickers" | "export";
 
@@ -133,9 +136,27 @@ export function AlbumWorkspace({
     }
   }
 
+  /**
+   * Creates a sticker out of an uploaded image, then generates it through the
+   * same queue as the others: the image only brings the description and the
+   * likeness, so what comes out is an ordinary sticker.
+   */
+  async function convertImage(kind: StickerKind, file: File) {
+    const form = new FormData();
+    form.append("image", file);
+    form.append("kind", kind);
+    const sticker = await api<Sticker>(`/api/albums/${album.id}/stickers/from-image`, {
+      method: "POST",
+      body: form,
+    });
+    setAlbum((a) => ({ ...a, stickers: [...a.stickers, sticker] }));
+    generate(sticker.id);
+    setStep("stickers");
+  }
+
+  // Asking happens at the button, in the page, not in a native dialog: see
+  // ConfirmButton. Ideas have nothing to lose and delete on the first click.
   async function deleteSticker(id: string) {
-    const sticker = albumRef.current.stickers.find((s) => s.id === id);
-    if (sticker?.versions.length && !confirm("Supprimer ce sticker et toutes ses versions ?")) return;
     clearTimeout(saveTimers.current.get(id));
     saveTimers.current.delete(id);
     setAlbum((a) => ({ ...a, stickers: a.stickers.filter((s) => s.id !== id) }));
@@ -306,7 +327,6 @@ export function AlbumWorkspace({
             setStep("ideas");
           }}
           onDelete={async () => {
-            if (!confirm(`Supprimer l'album « ${album.name} » et tous ses stickers ?`)) return;
             await api(`/api/albums/${album.id}`, { method: "DELETE" });
             router.push("/");
             router.refresh();
@@ -315,7 +335,10 @@ export function AlbumWorkspace({
       )}
 
       {step === "ideas" && (
-        <div className="space-y-4">
+        // Each step is mounted only while it is current, so the entry animation
+        // needs no key. fade-in is opacity-only on purpose: this block holds the
+        // fixed selection dock, and a translate here would re-parent it.
+        <div className="space-y-4 fade-in">
           <IdeaGenerator
             albumId={album.id}
             hasTheme={Boolean(album.theme.trim())}
@@ -324,6 +347,7 @@ export function AlbumWorkspace({
               setSelected((sel) => new Set([...sel, ...stickers.map((s) => s.id)]));
             }}
             onAdd={addSticker}
+            onImage={convertImage}
           />
 
           {ideas.length === 0 ? (
@@ -347,8 +371,8 @@ export function AlbumWorkspace({
                 </Button>
               </div>
               <ul className="grid gap-3 lg:grid-cols-2">
-                {ideas.map((sticker) => (
-                  <li key={sticker.id}>
+                {ideas.map((sticker, i) => (
+                  <li key={sticker.id} style={stagger(i)} className="rise-in">
                     {/* border-action! : Card already sets border-line, and Tailwind emits
                         colour utilities alphabetically, so action would lose to line. */}
                     <Card
@@ -414,14 +438,14 @@ export function AlbumWorkspace({
 
       {step === "stickers" &&
         (made.length === 0 ? (
-          <div className="py-12 text-center">
+          <div className="fade-in py-12 text-center">
             <p className="text-ink-soft">Aucun sticker généré pour l&apos;instant.</p>
             <Button className="mt-3" variant="primary" onClick={() => setStep("ideas")}>
               Choisir des idées
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 fade-in">
             <p className="text-sm text-ink-soft">
               Mets une étoile aux stickers à garder. Génération : {imageSettings}.{" "}
               <Link href="/style" className="underline hover:text-action">
@@ -429,8 +453,8 @@ export function AlbumWorkspace({
               </Link>
             </p>
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {made.map((sticker) => (
-                <li key={sticker.id}>
+              {made.map((sticker, i) => (
+                <li key={sticker.id} style={stagger(i)} className="rise-in">
                   <StickerCard
                     albumId={album.id}
                     index={album.stickers.indexOf(sticker)}
@@ -438,6 +462,7 @@ export function AlbumWorkspace({
                     theme={album.theme}
                     style={style}
                     refCounts={refCounts}
+                    eager={i < 3}
                     job={jobs[sticker.id]}
                     error={errors[sticker.id]}
                     uploading={Boolean(uploading[sticker.id])}
@@ -488,7 +513,7 @@ function ThemeStep({
   }
 
   return (
-    <Card className="max-w-3xl space-y-4 p-5">
+    <Card className="fade-in max-w-3xl space-y-4 p-5">
       <label className="block space-y-1">
         <span className="text-sm font-semibold">Nom de l&apos;album</span>
         <input className="field" value={name} onChange={(e) => setName(e.target.value)} />
@@ -504,10 +529,13 @@ function ThemeStep({
         />
       </label>
       {error && <ErrorNote message={error} />}
-      <div className="flex justify-between">
-        <Button variant="danger" size="sm" onClick={onDelete}>
-          Supprimer l&apos;album
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ConfirmButton
+          label="Supprimer l'album"
+          question={`« ${album.name} » et tous ses stickers ?`}
+          confirmLabel="Supprimer"
+          onConfirm={onDelete}
+        />
         <Button variant="primary" onClick={save} disabled={busy || !name.trim()}>
           {busy && <Spinner />} Enregistrer et passer aux idées
           <ArrowRight {...ICON} />
@@ -524,11 +552,13 @@ function IdeaGenerator({
   hasTheme,
   onIdeas,
   onAdd,
+  onImage,
 }: {
   albumId: string;
   hasTheme: boolean;
   onIdeas: (stickers: Sticker[]) => void;
   onAdd: (kind: StickerKind) => void;
+  onImage: (kind: StickerKind, file: File) => Promise<void>;
 }) {
   const [count, setCount] = useState(6);
   const [focus, setFocus] = useState("");
@@ -598,6 +628,7 @@ function IdeaGenerator({
           ))}
         </div>
       </Card>
+      <ImageToSticker onConvert={onImage} />
     </div>
   );
 }
@@ -611,7 +642,7 @@ function ExportStep({ album, favorites }: { album: Album; favorites: number }) {
     .reduce((sum, v) => sum + (v.costUsd ?? 0), 0);
 
   return (
-    <Card className="max-w-3xl space-y-4 p-5">
+    <Card className="fade-in max-w-3xl space-y-4 p-5">
       <h2 className="font-display text-xl font-semibold">Télécharger</h2>
       <p className="text-sm text-ink-soft">
         Tu récupères la version affichée de chaque sticker, en PNG à fond transparent, prête à poser dans ton
@@ -641,7 +672,7 @@ function ExportStep({ album, favorites }: { album: Album; favorites: number }) {
         )}
       </div>
       {cost > 0 && (
-        <p className="text-xs text-ink-soft">Coût estimé des générations de cet album : ≈ {cost.toFixed(2)} $</p>
+        <p className="text-xs text-ink-soft">Coût estimé des générations de cet album : ≈ {formatUsd(cost)}</p>
       )}
     </Card>
   );

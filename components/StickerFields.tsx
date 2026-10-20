@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRef } from "react";
 import { photoUrl } from "@/lib/client-api";
 import type { StickerPatch } from "@/lib/sticker-draft";
@@ -37,9 +38,12 @@ export function StickerFields({
             aria-checked={sticker.kind === kind}
             title={KIND_INFO[kind].hint}
             onClick={() => onChange({ kind })}
+            // Selected reads as action, like the checked idea cards and the
+            // current version ring. Navy is reserved for navigation chrome, so
+            // the two are not both saying "this one" in different colours.
             className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${
               sticker.kind === kind
-                ? "border-navy bg-navy text-white"
+                ? "border-action bg-action text-white"
                 : "border-line bg-white text-ink-soft hover:text-ink"
             }`}
           >
@@ -94,15 +98,17 @@ export function StickerFields({
         </label>
 
         <div className="flex items-center gap-2">
-          {sticker.photos.map((file) => (
-            <span key={file} className="group relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photoUrl(albumId, file)} alt="" className="h-10 w-10 rounded-lg object-cover" />
+          {sticker.photos.map((file, i) => (
+            <span key={file} className="group relative block h-10 w-10">
+              <Image src={photoUrl(albumId, file)} alt="" fill sizes="40px" className="rounded-lg object-cover" />
+              {/* Opacity rather than `hidden`: the remove button used to leave
+                  the tab order entirely, so photos could only be removed with a
+                  mouse. It now also appears when it takes focus. */}
               <button
                 type="button"
                 onClick={() => onRemovePhoto(file)}
-                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-ink text-white group-hover:flex"
-                aria-label="Retirer la photo"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label={`Retirer la photo ${i + 1}`}
               >
                 <X size={12} weight="bold" aria-hidden />
               </button>

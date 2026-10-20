@@ -111,6 +111,27 @@ export interface AlbumSummary {
 export type ImageModelId = "gpt-image-2.5-flare" | "gpt-image-2.5-sunburst";
 export type ImageQuality = "low" | "medium" | "high" | "xhigh";
 
+export const IMAGE_MODELS: ImageModelId[] = ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"];
+export const IMAGE_QUALITIES: ImageQuality[] = ["low", "medium", "high", "xhigh"];
+
+/**
+ * The names the app says out loud. The raw model ids stay in the API payloads
+ * and in the prompt panel; nothing in the interface should print one at the
+ * user, and "Mon style" and the album workspace have to agree on the wording.
+ */
+export const MODEL_INFO: Record<ImageModelId, { label: string; hint: string }> = {
+  "gpt-image-2.5-flare": { label: "Flare", hint: "Rapide, très bon au quotidien" },
+  "gpt-image-2.5-sunburst": { label: "Sunburst", hint: "Plus précis, idéal pour les retouches" },
+};
+
+/** `label` is the full wording in the picker, `short` the one used in a sentence. */
+export const QUALITY_INFO: Record<ImageQuality, { label: string; short: string }> = {
+  low: { label: "Brouillon", short: "brouillon" },
+  medium: { label: "Moyenne", short: "moyenne" },
+  high: { label: "Haute (conseillée)", short: "haute" },
+  xhigh: { label: "Très haute (plus lente et plus chère)", short: "très haute" },
+};
+
 export interface Settings {
   style: string;
   model: ImageModelId;

@@ -16,3 +16,18 @@ export async function clearTransparentPixels(png: Buffer): Promise<Buffer> {
   }
   return sharp(data, { raw: info }).png().toBuffer();
 }
+
+/**
+ * Prepares an uploaded image for the description call. The model only has to
+ * recognize what the image shows, so a 12 Mpx phone photo would cost and take
+ * several times more for nothing. `rotate()` applies the EXIF orientation
+ * phones write, which the raw pixels alone would get wrong.
+ */
+export async function shrinkForVision(image: Buffer): Promise<Buffer> {
+  return sharp(image)
+    .rotate()
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+}

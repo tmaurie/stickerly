@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { imageUrl } from "@/lib/client-api";
+import { formatUsd } from "@/lib/format";
 import { ADJUST_SUGGESTIONS, buildPrompt } from "@/lib/prompt";
 import { stickerFileName } from "@/lib/slug";
 import type { StickerPatch } from "@/lib/sticker-draft";
@@ -9,11 +11,14 @@ import type { Sticker, StickerKind } from "@/lib/types";
 import { currentVersion, KIND_INFO } from "@/lib/types";
 import { ArrowsClockwise, DownloadSimple, ICON, PencilSimple, Star } from "./icons";
 import { StickerFields } from "./StickerFields";
-import { Button, ErrorNote } from "./ui";
+import { Button, ConfirmButton, ErrorNote } from "./ui";
 
 export type JobState = { status: "queued" | "running"; startedAt: number; instruction?: string };
 
 type Panel = "adjust" | "edit" | "prompt" | null;
+
+/** Cards sit three to a row, half-width on a tablet, full-width on a phone. */
+const CARD_SIZES = "(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw";
 
 export function StickerCard({
   albumId,
@@ -25,6 +30,7 @@ export function StickerCard({
   job,
   error,
   uploading,
+  eager,
   onChange,
   onGenerate,
   onAddPhotos,
@@ -41,6 +47,8 @@ export function StickerCard({
   job?: JobState;
   error?: string;
   uploading: boolean;
+  /** Set on the first row, which is above the fold and holds the LCP image. */
+  eager?: boolean;
   onChange: (patch: StickerPatch) => void;
   onGenerate: (instruction?: string) => void;
   onAddPhotos: (files: File[]) => void;
@@ -76,14 +84,21 @@ export function StickerCard({
   }
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-blob border border-line bg-white shadow-sm">
-      <div className={`checker relative ${sticker.kind === "title" ? "aspect-[3/1.4]" : "aspect-square"}`}>
+    <article className="flex h-full flex-col overflow-hidden rounded-blob border border-line bg-white shadow-clay">
+      {/* Every kind gets the same square window, including the wide page titles.
+          They used to keep their own 3:1.4 box, which left each grid row with
+          cards of three different heights and action rows that never lined up.
+          The checkerboard around a letterboxed title is not dead space here: it
+          is the sticker's transparency, which is the thing being shown. */}
+      <div className="checker relative aspect-square">
         {version && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={imageUrl(albumId, version.file)}
             alt={label}
-            className={`h-full w-full object-contain p-2 transition ${busy ? "opacity-40 blur-[1px]" : ""}`}
+            fill
+            sizes={CARD_SIZES}
+            loading={eager ? "eager" : "lazy"}
+            className={`object-contain p-2 transition ${busy ? "opacity-40 blur-[1px]" : ""}`}
           />
         )}
         {job && <GeneratingOverlay job={job} />}
@@ -112,12 +127,17 @@ export function StickerCard({
               type="button"
               onClick={() => onChange({ currentVersionId: v.id })}
               title={v.instruction ? `V${i + 1} : ${v.instruction}` : `Version ${i + 1}`}
-              className={`checker h-11 w-11 shrink-0 overflow-hidden rounded-lg border-2 ${
+              className={`checker relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border-2 ${
                 v.id === version?.id ? "border-action" : "border-transparent opacity-70 hover:opacity-100"
               }`}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl(albumId, v.file)} alt={`Version ${i + 1}`} className="h-full w-full object-contain" />
+              <Image
+                src={imageUrl(albumId, v.file)}
+                alt={`Version ${i + 1}`}
+                fill
+                sizes="44px"
+                className="object-contain"
+              />
             </button>
           ))}
         </div>
@@ -161,8 +181,11 @@ export function StickerCard({
           )}
         </div>
 
+        {/* The panels used to be cream cards sitting inside this white card on a
+            cream page, three surfaces deep for one level of hierarchy. A rule
+            across the full card width says the same thing with nothing stacked. */}
         {panel === "adjust" && (
-          <div className="space-y-2 rounded-xl bg-cream p-3">
+          <div className="-mx-4 space-y-2 border-t border-line px-4 pt-3">
             <p className="text-sm font-semibold">Qu&apos;est-ce qu&apos;on change ?</p>
             <div className="flex flex-wrap gap-1.5">
               {ADJUST_SUGGESTIONS.map((s) => (
@@ -170,7 +193,7 @@ export function StickerCard({
                   key={s}
                   type="button"
                   onClick={() => adjust(s)}
-                  className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold hover:border-action hover:text-action"
+                  className="rounded-full border border-line bg-cream px-2.5 py-1 text-xs font-semibold hover:border-action hover:text-action"
                 >
                   {s}
                 </button>
@@ -198,7 +221,7 @@ export function StickerCard({
         )}
 
         {panel === "edit" && (
-          <div className="space-y-3 rounded-xl bg-cream p-3">
+          <div className="-mx-4 space-y-3 border-t border-line px-4 pt-3">
             <StickerFields
               albumId={albumId}
               sticker={sticker}
@@ -207,10 +230,13 @@ export function StickerCard({
               onRemovePhoto={onRemovePhoto}
               uploading={uploading}
             />
-            <div className="flex justify-between">
-              <Button size="sm" variant="danger" onClick={onDelete}>
-                Supprimer le sticker
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <ConfirmButton
+                label="Supprimer le sticker"
+                question="Ce sticker et toutes ses versions ?"
+                confirmLabel="Supprimer"
+                onConfirm={onDelete}
+              />
               <Button
                 size="sm"
                 variant="primary"
@@ -227,7 +253,7 @@ export function StickerCard({
         )}
 
         {panel === "prompt" && (
-          <div className="space-y-2 rounded-xl bg-cream p-3">
+          <div className="-mx-4 space-y-2 border-t border-line px-4 pt-3">
             <p className="text-xs text-ink-soft">
               {sticker.promptOverride
                 ? "Prompt personnalisé : il remplace le prompt automatique pour ce sticker."
@@ -269,9 +295,9 @@ export function StickerCard({
               <details className="text-xs">
                 <summary className="cursor-pointer font-semibold text-ink-soft">
                   Prompt de la version affichée
-                  {version.costUsd ? ` · ≈ ${version.costUsd.toFixed(2)} $` : ""}
+                  {version.costUsd ? ` · ≈ ${formatUsd(version.costUsd)}` : ""}
                 </summary>
-                <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-white p-2 font-mono">{version.prompt}</pre>
+                <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-cream p-2 font-mono">{version.prompt}</pre>
               </details>
             )}
           </div>

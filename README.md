@@ -5,6 +5,8 @@
 
 **Des stickers en pâte à modeler pour illustrer tes albums photo, toujours dans le même style.**
 
+<img src="docs/screenshots/accueil.png" alt="L'accueil de Stickerly : le formulaire de nouvel album à droite, trois stickers d'exemple sous le titre, et la liste des albums existants en dessous" width="900">
+
 </div>
 
 Illustrer un album photo avec des stickers générés, c'est vite pénible : on réécrit le même prompt, on le retouche, on relance, on compare. Stickerly fait ce travail à ta place. Tu décris ton album, l'app propose des stickers, les génère dans **ton** style et te laisse les ajuster en une phrase.
@@ -15,6 +17,7 @@ Tout tourne en local, avec ta clé OpenAI. Les images sortent en PNG à fond tra
 
 - **Parcours guidé en 4 étapes** : thème → idées → génération → export.
 - **Suggestions d'idées** adaptées au thème de l'album (lieux visités, plats, anecdotes).
+- **Depuis une image** : une photo, une capture, un dessin. Tu choisis le type de sticker, l'image est lue pour remplir la description et sert de référence — le sticker est redessiné dans ton style, jamais collé tel quel.
 - **Prompt dynamique** : ton style, la mise en page du type de sticker et ta description sont assemblés automatiquement. Tu peux toujours lire et modifier le prompt final.
 - **Cohérence de style** : jusqu'à 3 de tes stickers existants sont joints à chaque génération comme exemples visuels.
 - **Retouches en une phrase** : « plus simple », « texte plus gros », « sans contour blanc »… sans repartir de zéro.
@@ -54,9 +57,21 @@ L'app est sur http://localhost:3000.
 ## Comment ça marche
 
 1. **Thème** — tu racontes l'album : lieux, personnes, moments forts, anecdotes. Plus c'est détaillé, plus les idées sont justes.
-2. **Idées** — le bouton « Proposer » suggère des stickers adaptés. Tu peux aussi en ajouter à la main. Tu coches ceux à générer, après les avoir retouchés si besoin.
+2. **Idées** — le bouton « Proposer » suggère des stickers adaptés. Tu peux aussi en ajouter à la main, ou partir d'une de tes images : choisis le type, puis l'image, et « Convertir en sticker » enchaîne directement sur la génération. Tu coches les idées à générer, après les avoir retouchées si besoin.
 3. **Stickers** — la génération part par lots de 3 en parallèle. Sur chaque sticker : « Autre version » relance, « Ajuster » applique une consigne courte, l'étoile garde le sticker en favori.
 4. **Export** — tu télécharges tes favoris, ou tout l'album, en un zip.
+
+<p align="center">
+  <img src="docs/screenshots/idees.png" alt="L'étape Idées : quatre suggestions de stickers en cartes, trois cochées, et la barre « 3 idées sélectionnées » avec le bouton Générer" width="900">
+  <br>
+  <em>Étape 2 : chaque idée est modifiable avant de partir en génération.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/stickers.png" alt="L'étape Stickers : une grille de stickers générés, chacun avec son type, son étoile favori et ses boutons Autre version et Ajuster" width="900">
+  <br>
+  <em>Étape 3 : « Autre version » relance, « Ajuster » applique une consigne courte, l'étoile garde le sticker.</em>
+</p>
 
 ## Les types de stickers
 
@@ -78,6 +93,10 @@ La page **Mon style** rassemble tout ce qui ne change jamais d'un sticker à l'a
 - **Les exemples de référence** : les images du dossier `references/`, que tu classes par type. À chaque génération, jusqu'à 3 exemples du même type sont tirés au hasard et joints au prompt. C'est le plus efficace pour garder un rendu cohérent.
 
 Pour ajouter des exemples, dépose des PNG dans `references/`, puis indique leur type dans « Mon style ».
+
+<p align="center">
+  <img src="docs/screenshots/style.png" alt="La page Mon style : la description du style en haut, le choix du modèle et de la qualité, puis la grille des exemples de référence classés par type" width="900">
+</p>
 
 > [!NOTE]
 > Si un type n'a qu'un seul exemple, le modèle a tendance à en recopier des éléments (un accessoire, un décor). Deux ou trois exemples par type suffisent à éviter ça.

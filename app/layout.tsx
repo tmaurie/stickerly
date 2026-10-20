@@ -7,7 +7,10 @@ const fredoka = Fredoka({ variable: "--font-fredoka", subsets: ["latin"] });
 const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Stickerly",
+  // Every page used to inherit the bare title, so each tab and bookmark read
+  // "Stickerly" whatever you were looking at. Children now set their own and
+  // the template keeps the app name on the end.
+  title: { default: "Stickerly", template: "%s · Stickerly" },
   description: "Des stickers en pâte à modeler pour tes albums photo",
 };
 
@@ -30,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </div>
           </nav>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 md:py-14">{children}</main>
       </body>
     </html>
   );

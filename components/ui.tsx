@@ -1,7 +1,9 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+"use client";
+
+import { useEffect, useId, useRef, useState, type ComponentPropsWithRef, type ReactNode } from "react";
 import { ICON, X } from "./icons";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "dangerSolid";
 
 export const BUTTON_BASE =
   "inline-flex items-center justify-center gap-1.5 rounded-full font-semibold transition disabled:pointer-events-none disabled:opacity-50";
@@ -11,7 +13,9 @@ export const VARIANTS: Record<Variant, string> = {
     "bg-action text-white shadow-[0_3px_0_var(--color-action-shadow)] hover:brightness-105 active:translate-y-[2px] active:shadow-[0_1px_0_var(--color-action-shadow)]",
   secondary: "bg-white text-ink border border-line hover:border-ink-soft/40",
   ghost: "text-ink-soft hover:bg-white hover:text-ink",
-  danger: "text-red-700 hover:bg-red-50",
+  danger: "text-danger hover:bg-danger-soft",
+  dangerSolid:
+    "bg-danger text-white shadow-[0_3px_0_var(--color-danger-shadow)] hover:brightness-110 active:translate-y-[2px] active:shadow-[0_1px_0_var(--color-danger-shadow)]",
 };
 
 export function Button({
@@ -19,7 +23,8 @@ export function Button({
   size = "md",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "sm" | "md" }) {
+  // React 19 passes `ref` as an ordinary prop, so no forwardRef wrapper.
+}: ComponentPropsWithRef<"button"> & { variant?: Variant; size?: "sm" | "md" }) {
   const sizing = size === "sm" ? "px-3 py-1.5 text-sm" : "px-4 py-2";
   return (
     <button
@@ -27,6 +32,75 @@ export function Button({
       className={`${BUTTON_BASE} ${sizing} ${VARIANTS[variant]} ${className}`}
       {...props}
     />
+  );
+}
+
+/**
+ * A destructive action that asks before it fires, in place of `confirm()`.
+ *
+ * The native dialog blocked the thread, could not be translated or styled, and
+ * looked nothing like the rest of the app. This arms in place instead: the
+ * question replaces the button, focus moves to the confirming control so a
+ * keyboard or screen-reader user lands on it, that control is described by the
+ * question, and Escape disarms.
+ */
+export function ConfirmButton({
+  label,
+  question,
+  confirmLabel,
+  onConfirm,
+  size = "sm",
+  className = "",
+}: {
+  label: string;
+  question: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  const [armed, setArmed] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const questionId = useId();
+
+  useEffect(() => {
+    if (armed) confirmRef.current?.focus();
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <Button variant="danger" size={size} className={className} onClick={() => setArmed(true)}>
+        {label}
+      </Button>
+    );
+  }
+
+  return (
+    <span
+      className="flex flex-wrap items-center gap-2"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setArmed(false);
+      }}
+    >
+      <span id={questionId} className="text-sm text-ink-soft">
+        {question}
+      </span>
+      <Button
+        ref={confirmRef}
+        variant="dangerSolid"
+        size={size}
+        aria-describedby={questionId}
+        onClick={() => {
+          setArmed(false);
+          onConfirm();
+        }}
+      >
+        {confirmLabel}
+      </Button>
+      <Button variant="ghost" size={size} onClick={() => setArmed(false)}>
+        Annuler
+      </Button>
+    </span>
   );
 }
 
@@ -47,7 +121,7 @@ export function ErrorNote({ message, onClose }: { message: string; onClose?: () 
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+      className="flex items-start gap-2 rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger"
     >
       <span className="flex-1">{message}</span>
       {onClose && (

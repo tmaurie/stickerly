@@ -10,6 +10,7 @@ export {
   Plus,
   Sparkle,
   Star,
+  UploadSimple,
   X,
 } from "@phosphor-icons/react";
 
