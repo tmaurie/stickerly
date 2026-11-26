@@ -67,9 +67,11 @@ export function StyleLibrary({ initial }: { initial: Library }) {
                     </h2>
                     <p className="text-sm text-ink-soft">
                       {MODEL_INFO[style.model].label} · qualité {QUALITY_INFO[style.quality].short} ·{" "}
-                      {style.useReferences
-                        ? `${total} exemple${total > 1 ? "s" : ""}, ${style.maxReferences} par génération`
-                        : "exemples désactivés"}
+                      {!style.useReferences
+                        ? "exemples désactivés"
+                        : total === 0
+                          ? "aucun exemple"
+                          : `${total} exemple${total > 1 ? "s" : ""}, ${style.maxReferences} par génération`}
                     </p>
                   </div>
                   {isDefault && (
