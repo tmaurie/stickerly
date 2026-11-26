@@ -21,21 +21,21 @@ const FRAMING =
 const KIND_TEMPLATES: Record<StickerKind, (s: StickerDraft) => string> = {
   badge: (s) => `TYPE: travel souvenir badge sticker.
 SCENE: ${s.subject}. Show it as a charming miniature diorama: the landmark(s) in the center, framed on the sides by trees or vegetation typical of the place, with water, a street or a landscape in the foreground when relevant.
-SKY: a soft light-blue sky with 2 or 3 puffy cream-white clay clouds; the top edge of the sticker follows a rounded, cloud-like silhouette.
-NAME BANNER: at the bottom, a cream-white area with the name in large, bold, rounded capital clay letters (deep navy blue or deep green, whichever fits the scene best), flanked on each side by one small symmetrical decorative motif typical of the place, with a thin wavy line underneath.`,
+SKY: a sky filling the upper area with 2 or 3 clouds; the top edge of the sticker follows a rounded, cloud-like silhouette.
+NAME BANNER: at the bottom, a solid band carrying the name in large, bold capital letters that read clearly against it, flanked on each side by one small symmetrical decorative motif typical of the place, with a thin wavy line underneath.`,
 
   title: (s) => `TYPE: horizontal page-title sticker, wide banner format.
-The TEXT is the hero: large puffy clay lettering spanning most of the width, on one or two lines, well spaced and highly legible.
-ILLUSTRATION: ${s.subject}, sculpted in the same clay style and integrated with the lettering (next to it, peeking behind it or resting on it). It stays secondary to the text.
+The TEXT is the hero: large lettering spanning most of the width, on one or two lines, well spaced and highly legible.
+ILLUSTRATION: ${s.subject}, rendered in the same style and integrated with the lettering (next to it, peeking behind it or resting on it). It stays secondary to the text.
 Keep the composition compact and airy, with no busy background.`,
 
   motif: (s) => `TYPE: small standalone decorative sticker.
 SUBJECT: ${s.subject}. One to three simple, iconic elements grouped tightly, with a clear and readable silhouette and generous simplification. No scene, no background.`,
 
   portrait: (s) => `TYPE: character sticker.
-CHARACTERS: ${s.subject}. Cute clay figurines with slightly oversized heads, big joyful expressions, soft rounded hands, and sculpted hair with visible clay strands or curls.
+CHARACTERS: ${s.subject}. Cute stylised figures with slightly oversized heads, big joyful expressions, soft rounded hands, and hair with visible strands or curls.
 BACKDROP: a simple vignette behind them that evokes the moment, inside a rounded cloud-shaped frame.
-CAPTION BANNER: at the bottom, a rounded pill-shaped banner in a deep color that matches the scene, with the text in cream puffy clay capital letters and a tiny sparkle on each side.`,
+CAPTION BANNER: at the bottom, a rounded pill-shaped banner in a deep color that matches the scene, with the text in capital letters that read clearly against it, and a tiny sparkle on each side.`,
 };
 
 export interface PromptContext {
@@ -57,7 +57,7 @@ function imagesRule({ styleRefCount = 0, photoCount = 0 }: PromptContext): strin
   if (photoCount > 0) {
     const range = photoCount === 1 ? `Image ${index}` : `Images ${index} to ${index + photoCount - 1}`;
     lines.push(
-      `${range}: real photos of the subject, used for likeness only. Keep the recognizable identity traits (for people: face shape, hair color, length and texture, skin tone, glasses, beard; for places: shapes and colors) and translate them into the clay style. Clothing, pose, accessories and setting follow the description above whenever it mentions them, even if the photos differ; otherwise take the clothing from the photos.`,
+      `${range}: real photos of the subject, used for likeness only. Keep the recognizable identity traits (for people: face shape, hair color, length and texture, skin tone, glasses, beard; for places: shapes and colors) and translate them into the style described above. Clothing, pose, accessories and setting follow the description above whenever it mentions them, even if the photos differ; otherwise take the clothing from the photos.`,
     );
     index += photoCount;
   }
@@ -65,7 +65,7 @@ function imagesRule({ styleRefCount = 0, photoCount = 0 }: PromptContext): strin
     const range =
       styleRefCount === 1 ? `Image ${index}` : `Images ${index} to ${index + styleRefCount - 1}`;
     lines.push(
-      `${range}: STYLE REFERENCES ONLY. Match their rendering, clay material, lighting, lettering, colors, border and overall layout. Do NOT copy anything they depict: no subjects, landmarks, characters, faces, clothing, accessories (such as glasses), props or text from them. Everything shown must come from the description above.`,
+      `${range}: STYLE REFERENCES ONLY. Match their rendering, material, lighting, lettering, colors, border and overall layout. Do NOT copy anything they depict: no subjects, landmarks, characters, faces, clothing, accessories (such as glasses), props or text from them. Everything shown must come from the description above.`,
     );
   }
   return lines.length ? `ATTACHED IMAGES:\n${lines.join("\n")}` : null;
@@ -93,7 +93,7 @@ export function buildAdjustPrompt(
 ): string {
   const text = sticker.text.trim();
   return [
-    "Image 1 is an existing sticker. Produce the same sticker again: same composition, subject, colors, clay style, border and transparent background.",
+    "Image 1 is an existing sticker. Produce the same sticker again: same composition, subject, colors, style, border and transparent background.",
     `Apply only this change: ${instruction.trim()}`,
     text
       ? `The text must stay exactly: "${text}" (unless the change above says otherwise).`
