@@ -7,8 +7,15 @@ import { api } from "@/lib/client-api";
 import { formatUsd } from "@/lib/format";
 import { stagger } from "@/lib/stagger";
 import type { StickerPatch } from "@/lib/sticker-draft";
-import type { Album, Sticker, StickerKind } from "@/lib/types";
-import { KIND_INFO, STICKER_KINDS } from "@/lib/types";
+import type { Album, ImageQuality, Sticker, StickerKind, StyleSummary } from "@/lib/types";
+import {
+  IMAGE_QUALITIES,
+  KIND_INFO,
+  MODEL_INFO,
+  pickStyle,
+  QUALITY_INFO,
+  STICKER_KINDS,
+} from "@/lib/types";
 import { ArrowLeft, ArrowRight, ICON, Plus, Sparkle, Star } from "./icons";
 import { ImageToSticker } from "./ImageToSticker";
 import { StickerCard, type JobState } from "./StickerCard";
@@ -28,19 +35,18 @@ function draftOf(s: Sticker): StickerPatch {
     details: s.details,
     outline: s.outline,
     promptOverride: s.promptOverride ?? null,
+    styleId: s.styleId ?? null,
   };
 }
 
 export function AlbumWorkspace({
   initialAlbum,
-  style,
-  refCounts,
-  imageSettings,
+  styles,
+  defaultStyleId,
 }: {
   initialAlbum: Album;
-  style: string;
-  refCounts: Record<StickerKind, number>;
-  imageSettings: string;
+  styles: StyleSummary[];
+  defaultStyleId: string;
 }) {
   const router = useRouter();
   const [album, setAlbumState] = useState(initialAlbum);
@@ -55,6 +61,8 @@ export function AlbumWorkspace({
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [globalError, setGlobalError] = useState<string | null>(null);
+  // Not persisted: a stored quality would silently apply to a whole queue.
+  const [qualityOverride, setQualityOverride] = useState<ImageQuality | null>(null);
 
   const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const queue = useRef<(() => Promise<void>)[]>([]);
@@ -111,11 +119,12 @@ export function AlbumWorkspace({
     replaceSticker(id, (s) => {
       const next = { ...s, ...patch } as Sticker;
       if (patch.promptOverride === null) delete next.promptOverride;
+      if (patch.styleId === null) delete next.styleId;
       return next;
     });
 
-    // Favorites and version picks are saved right away, text fields after a short pause.
-    if ("favorite" in patch || "currentVersionId" in patch) {
+    // Favorites, version picks and Style switches are saved right away, text fields after a short pause.
+    if ("favorite" in patch || "currentVersionId" in patch || "styleId" in patch) {
       saveNow(id);
     } else {
       clearTimeout(saveTimers.current.get(id));
@@ -220,7 +229,7 @@ export function AlbumWorkspace({
         saveTimers.current.delete(id);
         const updated = await api<Sticker>(`/api/albums/${album.id}/stickers/${id}/generate`, {
           method: "POST",
-          json: { draft: draftOf(sticker), instruction },
+          json: { draft: draftOf(sticker), instruction, quality: qualityOverride ?? undefined },
         });
         replaceSticker(id, (s) => ({
           ...s,
@@ -254,6 +263,17 @@ export function AlbumWorkspace({
   const favorites = album.stickers.filter((s) => s.favorite && s.versions.length > 0);
   const selectedIdeas = ideas.filter((s) => selected.has(s.id));
   const runningCount = Object.keys(jobs).length;
+
+  // Same resolution rule as the server, from the same function.
+  const albumStyle = pickStyle(styles, defaultStyleId, album.styleId);
+  const quality = qualityOverride ?? albumStyle.quality;
+
+  function setAlbumStyle(styleId: string) {
+    setAlbum((a) => ({ ...a, styleId }));
+    api(`/api/albums/${album.id}`, { method: "PATCH", json: { styleId } }).catch((err: Error) =>
+      setGlobalError(err.message),
+    );
+  }
 
   // Derived rather than stored, so it cannot drift out of sync with the queue.
   // A live region is not announced on mount, only when it changes, so the idle
@@ -317,11 +337,49 @@ export function AlbumWorkspace({
         ))}
       </nav>
 
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <button
+          type="button"
+          onClick={() => setStep("theme")}
+          className="rounded-full bg-white px-3 py-1.5 font-semibold shadow-sm hover:text-action"
+          title="Le style se choisit à l'étape Thème"
+        >
+          Style : {albumStyle.name}
+        </button>
+        <span className="text-ink-soft">{MODEL_INFO[albumStyle.model].label}</span>
+        <label className="flex items-center gap-1.5 text-ink-soft">
+          Qualité
+          <select
+            className="rounded-md border border-line bg-white px-1 py-0.5 font-semibold text-ink"
+            value={quality}
+            onChange={(e) => {
+              const next = e.target.value as ImageQuality;
+              setQualityOverride(next === albumStyle.quality ? null : next);
+            }}
+          >
+            {IMAGE_QUALITIES.map((q) => (
+              <option key={q} value={q}>
+                {QUALITY_INFO[q].label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {qualityOverride && (
+          <span className="text-xs text-ink-soft">le temps de la session</span>
+        )}
+        <Link href="/styles" className="text-ink-soft underline hover:text-action">
+          Mes styles
+        </Link>
+      </div>
+
       {globalError && <ErrorNote message={globalError} onClose={() => setGlobalError(null)} />}
 
       {step === "theme" && (
         <ThemeStep
           album={album}
+          styles={styles}
+          styleId={albumStyle.id}
+          onStyleChange={setAlbumStyle}
           onSaved={(a) => {
             setAlbum((prev) => ({ ...prev, name: a.name, theme: a.theme }));
             setStep("ideas");
@@ -446,12 +504,7 @@ export function AlbumWorkspace({
           </div>
         ) : (
           <div className="space-y-3 fade-in">
-            <p className="text-sm text-ink-soft">
-              Mets une étoile aux stickers à garder. Génération : {imageSettings}.{" "}
-              <Link href="/style" className="underline hover:text-action">
-                Modifier
-              </Link>
-            </p>
+            <p className="text-sm text-ink-soft">Mets une étoile aux stickers à garder.</p>
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {made.map((sticker, i) => (
                 <li key={sticker.id} style={stagger(i)} className="rise-in">
@@ -460,8 +513,9 @@ export function AlbumWorkspace({
                     index={album.stickers.indexOf(sticker)}
                     sticker={sticker}
                     theme={album.theme}
-                    style={style}
-                    refCounts={refCounts}
+                    styles={styles}
+                    resolvedStyle={pickStyle(styles, defaultStyleId, album.styleId, sticker.styleId)}
+                    albumStyleName={albumStyle.name}
                     eager={i < 3}
                     job={jobs[sticker.id]}
                     error={errors[sticker.id]}
@@ -488,10 +542,16 @@ export function AlbumWorkspace({
 
 function ThemeStep({
   album,
+  styles,
+  styleId,
+  onStyleChange,
   onSaved,
   onDelete,
 }: {
   album: Album;
+  styles: StyleSummary[];
+  styleId: string;
+  onStyleChange: (styleId: string) => void;
   onSaved: (album: Album) => void;
   onDelete: () => void;
 }) {
@@ -527,6 +587,28 @@ function ThemeStep({
           onChange={(e) => setTheme(e.target.value)}
           placeholder="Où, quand, avec qui ? Les lieux visités, les moments forts, les plats, les petites anecdotes… Décris aussi les personnes (cheveux, lunettes…) si tu veux des stickers de personnages."
         />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-sm font-semibold">Style de l&apos;album</span>
+        <select
+          className="field"
+          value={styleId}
+          onChange={(e) => onStyleChange(e.target.value)}
+        >
+          {styles.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <span className="block text-xs text-ink-soft">
+          Il décide du rendu des stickers, et il sert aussi à rédiger les suggestions
+          d&apos;idées : c&apos;est pour ça qu&apos;il se choisit ici, avant l&apos;étape
+          Idées. Chaque sticker peut ensuite en prendre un autre.{" "}
+          <Link href="/styles" className="underline hover:text-action">
+            Mes styles
+          </Link>
+        </span>
       </label>
       {error && <ErrorNote message={error} />}
       <div className="flex flex-wrap items-center justify-between gap-3">

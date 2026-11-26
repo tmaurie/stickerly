@@ -3,7 +3,7 @@ import { KIND_INFO } from "./types";
 
 export type StickerPatch = Partial<
   Pick<Sticker, "kind" | "text" | "subject" | "details" | "outline" | "favorite" | "currentVersionId">
-> & { promptOverride?: string | null };
+> & { promptOverride?: string | null; styleId?: string | null };
 
 /** Copies the editable fields of a client payload onto a sticker, ignoring anything else. */
 export function applyDraft(sticker: Sticker, patch: StickerPatch | undefined): void {
@@ -19,4 +19,7 @@ export function applyDraft(sticker: Sticker, patch: StickerPatch | undefined): v
   }
   if (patch.promptOverride === null || patch.promptOverride === "") delete sticker.promptOverride;
   else if (typeof patch.promptOverride === "string") sticker.promptOverride = patch.promptOverride;
+  // Clearing it sends the Sticker back to the Style of its Album.
+  if (patch.styleId === null || patch.styleId === "") delete sticker.styleId;
+  else if (typeof patch.styleId === "string") sticker.styleId = patch.styleId;
 }

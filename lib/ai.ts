@@ -1,10 +1,11 @@
 import "server-only";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import OpenAI, { toFile } from "openai";
 import type { ImagesResponse } from "openai/resources/images";
+import { UserFacingError } from "./errors";
 import { clearTransparentPixels, shrinkForVision } from "./image";
-import { listReferenceFiles, REFERENCES_DIR } from "./storage";
+import { REFERENCES_DIR } from "./storage";
 import type { ImageModelId, ImageQuality, StickerDraft, StickerKind } from "./types";
 import { KIND_INFO, STICKER_KINDS } from "./types";
 
@@ -16,14 +17,7 @@ const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL ?? "gpt-5.6-luna";
 // USD per 1M tokens for gpt-image-2.5 (OpenAI pricing page, September 2026).
 const IMAGE_PRICES = { textIn: 5, imageIn: 8, imageOut: 30 };
 
-export class UserFacingError extends Error {
-  constructor(
-    message: string,
-    public status = 400,
-  ) {
-    super(message);
-  }
-}
+export { UserFacingError };
 
 function openai(): OpenAI {
   if (!process.env.OPENAI_API_KEY) {
@@ -113,36 +107,68 @@ export async function renderImage(opts: RenderOptions): Promise<{ png: Buffer; c
   return { png, costUsd: estimateCost(response.usage) };
 }
 
+/** Demo mode leans on any reference image on disk, whichever Style owns it. */
+async function firstReferenceFile(dir: string): Promise<string | null> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = await firstReferenceFile(full);
+      if (found) return found;
+    } else if (/\.(png|jpe?g|webp)$/i.test(entry.name)) {
+      return full;
+    }
+  }
+  return null;
+}
+
 async function fakeRender(opts: RenderOptions): Promise<{ png: Buffer; costUsd?: number }> {
   await new Promise((resolve) => setTimeout(resolve, 1500));
   const last = opts.images[opts.images.length - 1];
   if (last) return { png: last.data, costUsd: 0 };
-  const [first] = await listReferenceFiles();
+  const first = await firstReferenceFile(REFERENCES_DIR);
   if (!first) throw new UserFacingError("Mode démo : aucune image dans references/.");
-  return { png: await readFile(path.join(REFERENCES_DIR, first)), costUsd: 0 };
+  return { png: await readFile(first), costUsd: 0 };
 }
 
 /* ---------- Reading and suggesting sticker descriptions ---------- */
 
-const CLAY_CONTEXT =
-  "Tu aides à illustrer des albums photo avec des stickers en pâte à modeler 3D (style figurines d'argile, mignon, couleurs fraîches).";
+/**
+ * The rendering comes from the Style, never from here.
+ *
+ * This used to hard-code the clay look, which made both text prompts lie as
+ * soon as a second Style existed: you could pick a watercolour Style and get
+ * ideas written in the vocabulary of modelling clay.
+ * See docs/adr/0001-un-style-possede-le-rendu.md.
+ */
+function styleContext(style: string): string {
+  return `Tu aides à illustrer des albums photo avec des stickers illustrés. Le rendu visuel est imposé par le style ci-dessous, auquel tu te conformes :
+${style.trim()}`;
+}
 
 /** What each type expects in `text`, `subject` and `details`: the ideas and the image reading fill the same fields. */
 const KIND_RULES = `Les 4 types possibles :
 - "badge" : vignette souvenir d'un lieu (ville, site, monument, région, parc, château…) avec son nom en bas.
   text = le nom tel qu'il apparaîtra, en MAJUSCULES (nom français ou local selon l'usage, ex. "FLORENCE", "TOSCANA", "CINQUE TERRE").
   subject = description visuelle précise de la scène : monuments emblématiques reconnaissables, architecture, éléments typiques (bateaux, végétation, eau, ponts).
-  details = le motif décoratif placé de chaque côté du nom (ex. branches d'olivier, ancres, azulejos, trèfles, iris, nénuphars) + la couleur des lettres (bleu marine ou vert foncé).
+  details = le motif décoratif placé de chaque côté du nom (ex. branches d'olivier, ancres, azulejos, trèfles, iris, nénuphars) + la couleur des lettres, prise dans la palette du style.
 - "title" : titre de page en bandeau horizontal.
   text = phrase courte en français, jolie, tendre ou avec un jeu de mots (ex. "Pause gourmande", "Chartres de nuit", "Février démarre sur les chapeaux de roue").
   subject = la petite illustration associée et sa position par rapport au texte.
-  details = style des lettres (arrondies grasses ou manuscrites arrondies), leur couleur, et un éventuel fond (ex. ciel de nuit bleu marine avec lune et étoiles).
-- "motif" : petit élément décoratif (objet, plat, fleur, animal, symbole), sans texte. text = "". Peut avoir de petits visages kawaii.
+  details = la forme et la couleur des lettres selon le style, et un éventuel fond (ex. ciel de nuit avec lune et étoiles).
+- "motif" : petit élément décoratif (objet, plat, fleur, animal, symbole), sans texte. text = "".
 - "portrait" : les personnes de l'album en figurines, dans un moment marquant. text = courte légende en MAJUSCULES. subject = qui (avec leur apparence si elle est décrite) et ce qu'ils font. Ne propose ce type que si l'album mentionne des personnes.
 
 outline = true pour un contour blanc découpé autour du sticker (presque toujours pour badge, motif et portrait ; au choix pour title).`;
 
-const IDEAS_INSTRUCTIONS = `${CLAY_CONTEXT} Tu proposes des idées de stickers pour l'album décrit.
+const ideasInstructions = (style: string) => `${styleContext(style)}
+
+Tu proposes des idées de stickers pour l'album décrit.
 
 ${KIND_RULES}
 
@@ -152,7 +178,9 @@ Règles :
 - Ne répète pas un sticker déjà présent dans l'album.
 - subject et details en français, 1 à 2 phrases chacun.`;
 
-const DESCRIBE_INSTRUCTIONS = `${CLAY_CONTEXT} On te donne une image fournie par l'utilisateur et le type de sticker à en tirer. Tu remplis les champs du sticker à partir de ce que montre l'image, pour qu'il soit ensuite redessiné dans ce style.
+const describeInstructions = (style: string) => `${styleContext(style)}
+
+On te donne une image fournie par l'utilisateur et le type de sticker à en tirer. Tu remplis les champs du sticker à partir de ce que montre l'image, pour qu'il soit ensuite redessiné dans ce style.
 
 ${KIND_RULES}
 
@@ -204,6 +232,8 @@ const DESCRIBE_SCHEMA = {
 export async function suggestIdeas(input: {
   albumName: string;
   theme: string;
+  /** The description of the resolved Style: it sets the vocabulary of the ideas. */
+  style: string;
   existing: StickerDraft[];
   count: number;
   focus?: string;
@@ -216,7 +246,7 @@ export async function suggestIdeas(input: {
 
   const response = await openai().responses.create({
     model: TEXT_MODEL,
-    instructions: IDEAS_INSTRUCTIONS,
+    instructions: ideasInstructions(input.style),
     input: `Album : ${input.albumName}
 Thème et contexte : ${input.theme || "(non précisé)"}
 ${input.focus?.trim() ? `Consigne : ${input.focus.trim()}\n` : ""}Stickers déjà présents :
@@ -273,6 +303,8 @@ export async function describeImage(input: {
   kind: StickerKind;
   albumName: string;
   theme: string;
+  /** The description of the resolved Style, so the reading targets the right rendering. */
+  style: string;
 }): Promise<StickerDescription> {
   if (FAKE_AI) return fakeDescription(input.kind);
 
@@ -280,7 +312,7 @@ export async function describeImage(input: {
   const info = KIND_INFO[input.kind];
   const response = await openai().responses.create({
     model: TEXT_MODEL,
-    instructions: DESCRIBE_INSTRUCTIONS,
+    instructions: describeInstructions(input.style),
     input: [
       {
         role: "user",

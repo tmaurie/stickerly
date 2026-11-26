@@ -3,13 +3,14 @@ import { handle } from "@/lib/http";
 import {
   deleteAsset,
   getAlbum,
+  getLibrary,
   newId,
   NotFoundError,
   saveAsset,
   updateAlbum,
 } from "@/lib/storage";
 import type { Sticker, StickerKind } from "@/lib/types";
-import { KIND_INFO } from "@/lib/types";
+import { KIND_INFO, resolveStyle } from "@/lib/types";
 import { IMAGE_EXTENSIONS, imageRejection } from "@/lib/upload";
 
 type Ctx = RouteContext<"/api/albums/[id]/stickers/from-image">;
@@ -46,6 +47,7 @@ export const POST = handle(async (request: Request, ctx: Ctx) => {
     kind,
     albumName: album.name,
     theme: album.theme,
+    style: resolveStyle(await getLibrary(), album).description,
   });
 
   const stickerId = newId();

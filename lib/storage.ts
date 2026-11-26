@@ -1,15 +1,16 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { UserFacingError } from "./errors";
 import { DEFAULT_STYLE } from "./prompt";
-import type { Album, AlbumSummary, Settings, Sticker, StickerKind } from "./types";
-import { currentVersion } from "./types";
+import { slugify } from "./slug";
+import type { Album, AlbumSummary, Sticker, StickerKind, Style, StyleLibrary } from "./types";
+import { currentVersion, findStyle } from "./types";
 
 export const DATA_DIR = path.join(process.cwd(), "data");
 export const REFERENCES_DIR = path.join(process.cwd(), "references");
 const ALBUMS_DIR = path.join(DATA_DIR, "albums");
-const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 
 export type AlbumAsset = "images" | "photos";
 
@@ -151,7 +152,13 @@ export async function deleteAsset(albumId: string, kind: AlbumAsset, file: strin
   await rm(assetPath(albumId, kind, file), { force: true });
 }
 
-/* ---------- Settings ---------- */
+/* ---------- Styles ---------- */
+
+const STYLES_FILE = path.join(DATA_DIR, "styles.json");
+
+/** The Style the migration folds the old global settings into. */
+export const SEED_STYLE_ID = "pate-a-modeler";
+export const SEED_STYLE_NAME = "Pâte à modeler";
 
 /** Which kind each of the original reference stickers illustrates. */
 const DEFAULT_REFERENCE_KINDS: [string, StickerKind][] = [
@@ -175,62 +182,170 @@ const DEFAULT_REFERENCE_KINDS: [string, StickerKind][] = [
 
 const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 
-export async function listReferenceFiles(): Promise<string[]> {
+/**
+ * Where a Style keeps its Exemples de référence.
+ *
+ * One folder per Style, because a reference image *is* the style: sharing one
+ * between two Styles drags the rendering of the first into the second. The id
+ * is a slug rather than an opaque id precisely so this folder stays readable,
+ * since it is a place the user opens by hand to drop PNGs into.
+ * See docs/adr/0003-un-dossier-de-references-par-style.md.
+ */
+export function styleReferencesDir(styleId: string): string {
+  if (!isSafeName(styleId)) throw new Error("Invalid style id");
+  return path.join(REFERENCES_DIR, styleId);
+}
+
+export async function listReferenceFiles(styleId: string): Promise<string[]> {
   try {
-    return (await readdir(REFERENCES_DIR)).filter((f) => IMAGE_EXT.test(f) && isSafeName(f)).sort();
+    return (await readdir(styleReferencesDir(styleId)))
+      .filter((f) => IMAGE_EXT.test(f) && isSafeName(f))
+      .sort();
   } catch {
     return [];
   }
 }
 
-export async function getSettings(): Promise<Settings> {
-  const stored = await readJson<Partial<Settings>>(SETTINGS_FILE);
-  const files = await listReferenceFiles();
-  const references: Settings["references"] = {};
+/** Re-reads the folder, so a PNG dropped in by hand appears, keeping the kinds already assigned. */
+async function withFolderReferences(style: Style): Promise<Style> {
+  const files = await listReferenceFiles(style.id);
+  const references: Style["references"] = {};
   for (const file of files) {
-    const known = stored?.references?.[file];
-    const guessed = DEFAULT_REFERENCE_KINDS.find(([key]) => file.includes(key))?.[1];
+    const known = style.references?.[file];
+    const guessed =
+      style.id === SEED_STYLE_ID
+        ? DEFAULT_REFERENCE_KINDS.find(([key]) => file.includes(key))?.[1]
+        : undefined;
     references[file] = known ?? guessed ?? "none";
   }
+  return { ...style, references };
+}
+
+export function seedStyle(): Style {
   return {
-    style: stored?.style ?? DEFAULT_STYLE,
-    model: stored?.model ?? "gpt-image-2.5-flare",
-    quality: stored?.quality ?? "high",
-    useReferences: stored?.useReferences ?? true,
-    maxReferences: stored?.maxReferences ?? 3,
-    references,
+    id: SEED_STYLE_ID,
+    name: SEED_STYLE_NAME,
+    description: DEFAULT_STYLE,
+    model: "gpt-image-2.5-flare",
+    quality: "high",
+    useReferences: true,
+    maxReferences: 3,
+    references: {},
+    createdAt: new Date().toISOString(),
   };
 }
 
-/** How many style references a generation of each kind will attach. */
-export function referenceCounts(settings: Settings): Record<StickerKind, number> {
-  const counts = { badge: 0, title: 0, motif: 0, portrait: 0 };
-  if (!settings.useReferences) return counts;
-  for (const kind of Object.values(settings.references)) {
-    if (kind !== "none") counts[kind] = Math.min(counts[kind] + 1, settings.maxReferences);
-  }
-  return counts;
+/**
+ * The Bibliothèque de styles, seeded on first read so a fresh clone works.
+ *
+ * Seeding writes a record and never moves a file: carrying the reference images
+ * into their Style folder is the one-shot migration script, because touching
+ * git-tracked files during a page load would be indefensible.
+ */
+export async function getLibrary(): Promise<StyleLibrary> {
+  const stored = await readJson<StyleLibrary>(STYLES_FILE);
+  const styles = stored?.styles?.length ? stored.styles : [seedStyle()];
+  const hydrated = await Promise.all(styles.map(withFolderReferences));
+  const stillThere = hydrated.some((s) => s.id === stored?.defaultStyleId);
+  return {
+    defaultStyleId: stillThere ? stored!.defaultStyleId : hydrated[0].id,
+    styles: hydrated,
+  };
 }
 
-/** A random pick of the reference stickers assigned to this kind (random, so no single one gets copied). */
+/** Read-modify-write under the styles lock. The mutator may return a value (defaults to the library). */
+export function updateLibrary<T = StyleLibrary>(
+  mutate: (library: StyleLibrary) => T | Promise<T>,
+): Promise<T> {
+  return withLock("__styles", async () => {
+    const library = await getLibrary();
+    const result = await mutate(library);
+    await writeJson(STYLES_FILE, library);
+    return (result === undefined ? library : result) as T;
+  });
+}
+
+export async function saveLibrary(library: StyleLibrary): Promise<StyleLibrary> {
+  await writeJson(STYLES_FILE, library);
+  return getLibrary();
+}
+
+/** A slug of the name, suffixed until free. Frozen afterwards: renaming never moves the folder. */
+function freshStyleId(library: StyleLibrary, name: string): string {
+  const base = slugify(name);
+  let id = base;
+  for (let n = 2; library.styles.some((s) => s.id === id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+/**
+ * Creates a Style, optionally duplicating `from`.
+ *
+ * A duplicate copies the reference folder rather than pointing at the source
+ * one: two Styles sharing images would reintroduce the very leak that the
+ * one-folder-per-Style rule exists to prevent.
+ */
+export async function createStyle(name: string, from?: string): Promise<Style> {
+  return updateLibrary(async (library) => {
+    const source = from ? findStyle(library, from) : undefined;
+    if (from && !source) throw new NotFoundError("Style introuvable");
+    const id = freshStyleId(library, name);
+    const style: Style = {
+      ...(source ? structuredClone(source) : seedStyle()),
+      id,
+      name,
+      createdAt: new Date().toISOString(),
+    };
+    if (!source) style.references = {};
+    library.styles.push(style);
+    if (source) {
+      try {
+        await cp(styleReferencesDir(source.id), styleReferencesDir(id), { recursive: true });
+      } catch (err) {
+        // The source Style simply has no folder yet.
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+    }
+    return style;
+  });
+}
+
+/**
+ * Deletes a Style. Its folder stays: erasing hand-picked, git-tracked source
+ * images on a click is not something the app allows itself. Albums pointing at
+ * it fall back to the Style par défaut, and the `styleName` each Version holds
+ * keeps the trace.
+ */
+export async function deleteStyle(id: string): Promise<StyleLibrary> {
+  return updateLibrary((library) => {
+    const style = findStyle(library, id);
+    if (!style) throw new NotFoundError("Style introuvable");
+    if (library.styles.length <= 1) {
+      throw new UserFacingError(
+        "Impossible de supprimer le dernier style : la bibliothèque ne peut pas être vide.",
+      );
+    }
+    library.styles = library.styles.filter((s) => s.id !== id);
+    if (library.defaultStyleId === id) library.defaultStyleId = library.styles[0].id;
+    return library;
+  });
+}
+
+/** A random pick of the Exemples de référence of this kind (random, so no single one gets copied). */
 export async function loadStyleReferences(
-  settings: Settings,
+  style: Style,
   kind: StickerKind,
 ): Promise<{ name: string; data: Buffer }[]> {
-  if (!settings.useReferences) return [];
-  const files = Object.entries(settings.references)
+  if (!style.useReferences) return [];
+  const files = Object.entries(style.references)
     .filter(([, k]) => k === kind)
     .map(([file]) => file)
     .sort(() => Math.random() - 0.5)
-    .slice(0, settings.maxReferences);
+    .slice(0, style.maxReferences);
+  const dir = styleReferencesDir(style.id);
   return Promise.all(
-    files.map(async (file) => ({ name: file, data: await readFile(path.join(REFERENCES_DIR, file)) })),
+    files.map(async (file) => ({ name: file, data: await readFile(path.join(dir, file)) })),
   );
-}
-
-export async function saveSettings(settings: Settings): Promise<Settings> {
-  await writeJson(SETTINGS_FILE, settings);
-  return getSettings();
 }
 
 export class NotFoundError extends Error {}

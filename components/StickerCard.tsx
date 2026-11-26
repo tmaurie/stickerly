@@ -7,7 +7,7 @@ import { formatUsd } from "@/lib/format";
 import { ADJUST_SUGGESTIONS, buildPrompt } from "@/lib/prompt";
 import { stickerFileName } from "@/lib/slug";
 import type { StickerPatch } from "@/lib/sticker-draft";
-import type { Sticker, StickerKind } from "@/lib/types";
+import type { Sticker, StyleSummary } from "@/lib/types";
 import { currentVersion, KIND_INFO } from "@/lib/types";
 import { ArrowsClockwise, DownloadSimple, ICON, PencilSimple, Star } from "./icons";
 import { StickerFields } from "./StickerFields";
@@ -25,8 +25,9 @@ export function StickerCard({
   index,
   sticker,
   theme,
-  style,
-  refCounts,
+  styles,
+  resolvedStyle,
+  albumStyleName,
   job,
   error,
   uploading,
@@ -42,8 +43,10 @@ export function StickerCard({
   index: number;
   sticker: Sticker;
   theme: string;
-  style: string;
-  refCounts: Record<StickerKind, number>;
+  styles: StyleSummary[];
+  /** Already resolved: this Sticker own Style, else its Album one. */
+  resolvedStyle: StyleSummary;
+  albumStyleName: string;
   job?: JobState;
   error?: string;
   uploading: boolean;
@@ -64,16 +67,25 @@ export function StickerCard({
   const busy = Boolean(job);
 
   const autoPrompt = buildPrompt(sticker, {
-    style,
+    style: resolvedStyle.description,
     theme,
-    styleRefCount: refCounts[sticker.kind],
+    styleRefCount: resolvedStyle.refCounts[sticker.kind],
     photoCount: sticker.photos.length,
   });
-  const [promptDraft, setPromptDraft] = useState(sticker.promptOverride ?? autoPrompt);
+  // null until the user types: the prompt then follows the resolved Style,
+  // the description and the photos on its own.
+  const [edited, setEdited] = useState<string | null>(null);
+  const promptDraft = edited ?? sticker.promptOverride ?? autoPrompt;
+
+  // A custom prompt ignores the Style description entirely, so switching Style
+  // on such a sticker half-works in silence. Say so rather than undo their work.
+  const styleDrifted = Boolean(
+    sticker.promptOverride && version?.styleId && version.styleId !== resolvedStyle.id,
+  );
 
   function toggle(next: Panel) {
     setPanel((p) => (p === next ? null : next));
-    if (next === "prompt") setPromptDraft(sticker.promptOverride ?? autoPrompt);
+    if (next === "prompt") setEdited(null);
   }
 
   function adjust(text: string) {
@@ -254,16 +266,51 @@ export function StickerCard({
 
         {panel === "prompt" && (
           <div className="-mx-4 space-y-2 border-t border-line px-4 pt-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold">Style de ce sticker</span>
+              <select
+                className="field py-1 text-sm"
+                value={sticker.styleId ?? ""}
+                onChange={(e) => onChange({ styleId: e.target.value || null })}
+              >
+                <option value="">Celui de l&apos;album ({albumStyleName})</option>
+                {styles.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="text-xs text-ink-soft">
               {sticker.promptOverride
-                ? "Prompt personnalisé : il remplace le prompt automatique pour ce sticker."
-                : "Prompt construit automatiquement à partir de la description et de ton style. Tu peux le modifier pour ce sticker."}
+                ? `Prompt personnalisé : il remplace le prompt automatique. La description de « ${resolvedStyle.name} » ne s'y applique donc pas, seuls son modèle et ses exemples de référence comptent encore.`
+                : "Prompt construit automatiquement à partir de la description et du style résolu. Tu peux le modifier pour ce sticker."}
             </p>
+            {styleDrifted && (
+              <div className="space-y-1 rounded-xl border border-line bg-cream px-3 py-2 text-xs">
+                <p>
+                  Ce prompt a été écrit sous « {version?.styleName} », et ce sticker est
+                  maintenant en « {resolvedStyle.name} ». Tant que le prompt personnalisé est
+                  là, changer de style ne change pas le dessin.
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="px-0"
+                  onClick={() => {
+                    onChange({ promptOverride: null });
+                    setEdited(null);
+                  }}
+                >
+                  Abandonner le prompt personnalisé
+                </Button>
+              </div>
+            )}
             <textarea
               className="field font-mono text-xs"
               rows={12}
               value={promptDraft}
-              onChange={(e) => setPromptDraft(e.target.value)}
+              onChange={(e) => setEdited(e.target.value)}
             />
             <div className="flex flex-wrap justify-end gap-1.5">
               {sticker.promptOverride && (
@@ -272,7 +319,7 @@ export function StickerCard({
                   variant="ghost"
                   onClick={() => {
                     onChange({ promptOverride: null });
-                    setPromptDraft(autoPrompt);
+                    setEdited(null);
                   }}
                 >
                   Revenir à l&apos;automatique
@@ -295,6 +342,7 @@ export function StickerCard({
               <details className="text-xs">
                 <summary className="cursor-pointer font-semibold text-ink-soft">
                   Prompt de la version affichée
+                  {version.styleName ? ` · ${version.styleName}` : ""}
                   {version.costUsd ? ` · ≈ ${formatUsd(version.costUsd)}` : ""}
                 </summary>
                 <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-cream p-2 font-mono">{version.prompt}</pre>
