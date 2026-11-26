@@ -27,8 +27,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/" className="rounded-full px-3 py-1.5 hover:bg-white">
                 Mes albums
               </Link>
-              <Link href="/style" className="rounded-full px-3 py-1.5 hover:bg-white">
-                Mon style
+              <Link href="/styles" className="rounded-full px-3 py-1.5 hover:bg-white">
+                Mes styles
               </Link>
             </div>
           </nav>

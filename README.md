@@ -16,10 +16,11 @@ Tout tourne en local, avec ta clé OpenAI. Les images sortent en PNG à fond tra
 ## Fonctionnalités
 
 - **Parcours guidé en 4 étapes** : thème → idées → génération → export.
+- **Bibliothèque de styles** : plusieurs styles, chacun avec sa description, ses exemples et son modèle. L'album en choisit un, et un sticker peut en prendre un autre.
 - **Suggestions d'idées** adaptées au thème de l'album (lieux visités, plats, anecdotes).
 - **Depuis une image** : une photo, une capture, un dessin. Tu choisis le type de sticker, l'image est lue pour remplir la description et sert de référence — le sticker est redessiné dans ton style, jamais collé tel quel.
 - **Prompt dynamique** : ton style, la mise en page du type de sticker et ta description sont assemblés automatiquement. Tu peux toujours lire et modifier le prompt final.
-- **Cohérence de style** : jusqu'à 3 de tes stickers existants sont joints à chaque génération comme exemples visuels.
+- **Cohérence de style** : jusqu'à 3 des exemples du style sont joints à chaque génération comme références visuelles.
 - **Retouches en une phrase** : « plus simple », « texte plus gros », « sans contour blanc »… sans repartir de zéro.
 - **Historique des versions** : chaque sticker garde toutes ses versions, tu choisis celle à garder.
 - **Photos de référence** : pour que les figurines ressemblent vraiment aux personnes.
@@ -84,19 +85,22 @@ L'app est sur http://localhost:3000.
 
 Chaque type a sa propre mise en page dans le prompt : composition, place du texte, décor autour du nom.
 
-## Ton style
+Cette mise en page ne dépend pas du style : le **type** décide de la composition, le **style** décide du rendu.
 
-La page **Mon style** rassemble tout ce qui ne change jamais d'un sticker à l'autre :
+## Tes styles
 
-- **La description du style** (matière, lumière, palette, lettrage), ajoutée à chaque prompt.
-- **Le modèle et la qualité** d'image.
-- **Les exemples de référence** : les images du dossier `references/`, que tu classes par type. À chaque génération, jusqu'à 3 exemples du même type sont tirés au hasard et joints au prompt. C'est le plus efficace pour garder un rendu cohérent.
+Un **style**, c'est une manière de rendre un sticker : sa matière, sa lumière, sa palette, son lettrage. La page **Mes styles** en tient la bibliothèque. Chacun porte :
 
-Pour ajouter des exemples, dépose des PNG dans `references/`, puis indique leur type dans « Mon style ».
+- **Sa description** (matière, lumière, palette, lettrage), ajoutée à chaque prompt — et qui sert aussi à rédiger les suggestions d'idées.
+- **Son modèle** d'image, et la **qualité** d'où partent ses générations.
+- **Ses exemples de référence** : les images de son dossier `references/<style>/`, que tu classes par type. À chaque génération, jusqu'à 3 exemples du même type sont tirés au hasard et joints au prompt. C'est le plus efficace pour garder un rendu cohérent.
 
-<p align="center">
-  <img src="docs/screenshots/style.png" alt="La page Mon style : la description du style en haut, le choix du modèle et de la qualité, puis la grille des exemples de référence classés par type" width="900">
-</p>
+Pour ajouter des exemples, dépose des PNG dans le dossier du style, puis indique leur type sur sa page.
+
+**Quel style s'applique ?** Celui du sticker s'il en a un, sinon celui de l'album, sinon le style par défaut. L'album choisit le sien à l'étape **Thème** — avant les idées, puisque le style sert aussi à les écrire. Un sticker en prend un autre depuis son panneau « Prompt ».
+
+Le dossier d'un style garde son nom même si tu le renommes, pour ne pas réécrire les albums et les versions qui le citent. Supprimer un style ne supprime pas son dossier d'images.
+
 
 > [!NOTE]
 > Si un type n'a qu'un seul exemple, le modèle a tendance à en recopier des éléments (un accessoire, un décor). Deux ou trois exemples par type suffisent à éviter ça.
@@ -115,7 +119,7 @@ Sur n'importe quel sticker, tu peux joindre jusqu'à 4 photos. Elles servent à 
 Le coût estimé de chaque version est affiché dans le panneau « Prompt » du sticker, et le total de l'album dans l'étape « Export ». Compte 15 à 40 secondes par image.
 
 > [!TIP]
-> La qualité « Brouillon » (dans « Mon style ») permet de tester une idée pour quelques centimes, avant de relancer la bonne en qualité haute.
+> La qualité « Brouillon » permet de tester une idée pour quelques centimes, avant de relancer la bonne en qualité haute. Chaque style a sa qualité de départ, et le sélecteur en haut de l'album la change le temps de la session.
 
 ## Configuration
 
@@ -125,7 +129,7 @@ Le coût estimé de chaque version est affiché dans le panneau « Prompt » du 
 | `OPENAI_TEXT_MODEL` | Modèle texte des suggestions d'idées. Par défaut `gpt-5.6-luna`. |
 | `STICKERLY_FAKE_AI` | À `1`, mode démo sans aucun appel à OpenAI. |
 
-Le reste (style, modèle d'image, qualité, exemples) se règle dans l'app, page « Mon style ».
+Le reste (styles, modèles d'image, qualité, exemples) se règle dans l'app, page « Mes styles ».
 
 ## Structure du projet
 
@@ -133,17 +137,33 @@ Le reste (style, modèle d'image, qualité, exemples) se règle dans l'app, page
 app/
   page.tsx              Accueil : liste des albums
   albums/[id]/          Espace de travail d'un album
-  style/                Réglages du style
-  api/                  Routes : albums, idées, génération, photos, export, réglages
-components/             Interface (workspace, cartes, formulaires)
+  styles/               Bibliothèque de styles, et l'éditeur de chacun
+  api/                  Routes : albums, idées, génération, photos, export, styles
+components/             Interface (workspace, cartes, formulaires, styles)
 lib/
+  types.ts              Le vocabulaire du domaine, et la résolution du style
   prompt.ts             Construction du prompt : style + type de sticker + description
   ai.ts                 Appels OpenAI (images et idées) et estimation des coûts
-  storage.ts            Stockage local des albums, images et réglages
+  storage.ts            Stockage local des albums, images et styles
   image.ts              Nettoyage de la transparence des PNG
-references/             Tes stickers existants, utilisés comme exemples de style
-data/                   Albums, images générées, photos, réglages (ignoré par git)
+references/<style>/     Les exemples de chaque style
+scripts/                Migration one-shot vers la bibliothèque de styles
+docs/adr/               Les décisions d'architecture et leurs raisons
+data/                   Albums, images générées, photos, styles (ignoré par git)
 ```
+
+Le vocabulaire du projet — album, sticker, type, version, style, exemple de référence — est défini dans [GLOSSARY.md](GLOSSARY.md).
+
+## Mise à jour depuis une version sans bibliothèque de styles
+
+Les réglages globaux « Mon style » sont devenus un premier style, « Pâte à modeler ». Une migration one-shot replie l'ancienne configuration, déplace les exemples de `references/` vers `references/pate-a-modeler/` et estampille les albums existants :
+
+```bash
+npm run migrate:styles -- --dry-run   # montre ce qui serait fait
+npm run migrate:styles                # applique
+```
+
+Elle utilise `git mv` pour les images que git suit, afin que leur historique les suive, et elle est idempotente. `data/settings.json` n'est plus lu ; elle le laisse en place, à toi de le supprimer.
 
 ## Dépannage
 
@@ -153,7 +173,7 @@ data/                   Albums, images générées, photos, réglages (ignoré p
 - **« Refusé par la modération »** : une formulation a déplu au filtre d'OpenAI. Reformule le sujet ou la légende, souvent un mot suffit.
 - **« Limite OpenAI atteinte »** : trop de générations d'affilée, ou crédit épuisé. Attends un peu, ou vérifie le solde de ton compte.
 - **Le texte du sticker est mal orthographié** : relance avec « Autre version », ou utilise « Ajuster » en citant la correction exacte.
-- **Un élément d'un autre sticker apparaît** : le modèle a recopié un exemple de référence. Ajoute d'autres exemples de ce type dans « Mon style ».
+- **Un élément d'un autre sticker apparaît** : le modèle a recopié un exemple de référence. Ajoute d'autres exemples de ce type au style concerné.
 
 > [!WARNING]
 > Tout est stocké dans `data/`, sur ta machine, sans authentification. L'app est pensée pour tourner en local : ne la déploie pas telle quelle sur Internet.

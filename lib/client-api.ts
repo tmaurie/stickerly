@@ -29,6 +29,6 @@ export function photoUrl(albumId: string, file: string): string {
   return `/api/albums/${albumId}/files/photos/${encodeURIComponent(file)}`;
 }
 
-export function referenceUrl(file: string): string {
-  return `/api/references/${encodeURIComponent(file)}`;
+export function referenceUrl(styleId: string, file: string): string {
+  return `/api/references/${encodeURIComponent(styleId)}/${encodeURIComponent(file)}`;
 }

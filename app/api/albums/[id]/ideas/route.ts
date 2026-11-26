@@ -1,7 +1,8 @@
 import { suggestIdeas } from "@/lib/ai";
 import { handle } from "@/lib/http";
-import { getAlbum, newId, NotFoundError, updateAlbum } from "@/lib/storage";
+import { getAlbum, getLibrary, newId, NotFoundError, updateAlbum } from "@/lib/storage";
 import type { Sticker } from "@/lib/types";
+import { resolveStyle } from "@/lib/types";
 
 export const POST = handle(async (request: Request, ctx: RouteContext<"/api/albums/[id]/ideas">) => {
   const { id } = await ctx.params;
@@ -10,9 +11,13 @@ export const POST = handle(async (request: Request, ctx: RouteContext<"/api/albu
   const album = await getAlbum(id);
   if (!album) throw new NotFoundError("Album introuvable");
 
+  // Resolved before asking: the Style sets the vocabulary the ideas are written in.
+  const style = resolveStyle(await getLibrary(), album);
+
   const ideas = await suggestIdeas({
     albumName: album.name,
     theme: album.theme,
+    style: style.description,
     existing: album.stickers,
     count: Math.min(Math.max(count, 1), 20),
     focus,

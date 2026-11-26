@@ -1,9 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, referenceUrl } from "@/lib/client-api";
-import type { ImageQuality, Settings, StickerKind } from "@/lib/types";
+import type { ImageQuality, StickerKind, Style } from "@/lib/types";
 import {
   IMAGE_MODELS,
   IMAGE_QUALITIES,
@@ -12,31 +13,42 @@ import {
   QUALITY_INFO,
   STICKER_KINDS,
 } from "@/lib/types";
-import { Button, Card, ErrorNote, Spinner } from "./ui";
+import { Button, Card, ConfirmButton, ErrorNote, Spinner } from "./ui";
 
 // Built from the shared tables so this page and the album workspace cannot
 // drift into calling the same model two different things.
 const MODELS = IMAGE_MODELS.map((id) => ({ id, ...MODEL_INFO[id] }));
 const QUALITIES = IMAGE_QUALITIES.map((id) => ({ id, label: QUALITY_INFO[id].label }));
 
-export function StyleSettings({ initial, defaultStyle }: { initial: Settings; defaultStyle: string }) {
-  const [settings, setSettings] = useState(initial);
+export function StyleEditor({
+  initial,
+  folder,
+  canDelete,
+}: {
+  initial: Style;
+  /** Shown because a rename never moves it: the id is frozen at creation. */
+  folder: string;
+  canDelete: boolean;
+}) {
+  const router = useRouter();
+  const [style, setStyle] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+  const dirty = JSON.stringify(style) !== JSON.stringify(saved);
 
-  function set<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setSettings((s) => ({ ...s, [key]: value }));
+  function set<K extends keyof Style>(key: K, value: Style[K]) {
+    setStyle((s) => ({ ...s, [key]: value }));
   }
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api<Settings>("/api/settings", { method: "PUT", json: settings });
-      setSettings(next);
+      const next = await api<Style>(`/api/styles/${style.id}`, { method: "PUT", json: style });
+      setStyle(next);
       setSaved(next);
+      router.refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -44,29 +56,45 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
     }
   }
 
-  const references = Object.entries(settings.references);
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/styles/${style.id}`, { method: "DELETE" });
+      router.push("/styles");
+      router.refresh();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  const references = Object.entries(style.references);
   const perKind = (kind: StickerKind) => references.filter(([, k]) => k === kind).length;
 
   return (
     <div className="space-y-6 pb-24">
       <Card className="space-y-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-display text-xl font-semibold">Description du style</h2>
-          {settings.style !== defaultStyle && (
-            <Button size="sm" variant="ghost" onClick={() => set("style", defaultStyle)}>
-              Rétablir le style d&apos;origine
-            </Button>
-          )}
-        </div>
+        <h2 className="font-display text-xl font-semibold">Nom</h2>
+        <input className="field" value={style.name} onChange={(e) => set("name", e.target.value)} />
+        <p className="text-xs text-ink-soft">
+          Les images de ce style vivent dans <code>{folder}</code>. Ce dossier garde son nom même si
+          tu renommes le style, pour ne pas réécrire les albums et les versions qui le citent.
+        </p>
+      </Card>
+
+      <Card className="space-y-3 p-5">
+        <h2 className="font-display text-xl font-semibold">Description du style</h2>
         <textarea
           className="field font-mono text-sm"
           rows={9}
-          value={settings.style}
-          onChange={(e) => set("style", e.target.value)}
+          value={style.description}
+          onChange={(e) => set("description", e.target.value)}
         />
         <p className="text-xs text-ink-soft">
-          En anglais, les modèles d&apos;image le suivent un peu mieux. Chaque type de sticker (badge, titre…) a
-          en plus sa propre mise en page, visible dans « Prompt » sur chaque sticker.
+          En anglais, les modèles d&apos;image le suivent un peu mieux. Cette description sert aussi
+          à rédiger les suggestions d&apos;idées. Chaque type de sticker (badge, titre…) a en plus sa
+          propre mise en page, visible dans « Prompt » sur chaque sticker.
         </p>
       </Card>
 
@@ -79,7 +107,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
                 type="radio"
                 name="model"
                 className="mt-1 accent-action"
-                checked={settings.model === m.id}
+                checked={style.model === m.id}
                 onChange={() => set("model", m.id)}
               />
               <span>
@@ -89,10 +117,10 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
           ))}
         </Card>
         <Card className="space-y-3 p-5">
-          <h2 className="font-display text-xl font-semibold">Qualité</h2>
+          <h2 className="font-display text-xl font-semibold">Qualité de départ</h2>
           <select
             className="field"
-            value={settings.quality}
+            value={style.quality}
             onChange={(e) => set("quality", e.target.value as ImageQuality)}
           >
             {QUALITIES.map((q) => (
@@ -102,8 +130,9 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
             ))}
           </select>
           <p className="text-xs text-ink-soft">
-            « Brouillon » est pratique pour tester une idée à moindre coût, puis « Autre version » en haute
-            qualité.
+            La qualité est une question de coût, pas de style : celle-ci n&apos;est qu&apos;un point
+            de départ, et l&apos;espace de travail de l&apos;album peut la changer le temps
+            d&apos;une génération.
           </p>
         </Card>
       </div>
@@ -115,7 +144,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
             <input
               type="checkbox"
               className="h-4 w-4 accent-action"
-              checked={settings.useReferences}
+              checked={style.useReferences}
               onChange={(e) => set("useReferences", e.target.checked)}
             />
             Montrer des exemples au modèle
@@ -125,17 +154,17 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
           À chaque génération, jusqu&apos;à{" "}
           <select
             className="rounded-md border border-line bg-white px-1"
-            value={settings.maxReferences}
+            value={style.maxReferences}
             onChange={(e) => set("maxReferences", Number(e.target.value))}
-            disabled={!settings.useReferences}
+            disabled={!style.useReferences}
           >
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n}>{n}</option>
             ))}
           </select>{" "}
-          exemples du même type sont tirés au hasard et joints au prompt. C&apos;est ce qui garde le rendu
-          cohérent d&apos;un sticker à l&apos;autre. Pour en ajouter, dépose des PNG dans le dossier{" "}
-          <code>references/</code> du projet.
+          exemples du même type sont tirés au hasard et joints au prompt. C&apos;est ce qui garde le
+          rendu cohérent d&apos;un sticker à l&apos;autre. Pour en ajouter, dépose des PNG dans{" "}
+          <code>{folder}</code>.
         </p>
         <p className="flex flex-wrap gap-2 text-xs">
           {STICKER_KINDS.map((kind) => (
@@ -145,7 +174,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
           ))}
         </p>
         {references.length === 0 ? (
-          <p className="text-sm text-ink-soft">Aucune image trouvée dans references/.</p>
+          <p className="text-sm text-ink-soft">Aucune image trouvée dans {folder}.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {references.map(([file, kind], i) => (
@@ -156,7 +185,7 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
                     and it is what the select below is numbered by too. */}
                 <div className="checker relative aspect-square overflow-hidden rounded-xl border border-line">
                   <Image
-                    src={referenceUrl(file)}
+                    src={referenceUrl(style.id, file)}
                     alt={`Exemple de référence ${i + 1}`}
                     fill
                     sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 200px"
@@ -168,7 +197,10 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
                   aria-label={`Type de l'exemple ${i + 1}`}
                   value={kind}
                   onChange={(e) =>
-                    set("references", { ...settings.references, [file]: e.target.value as StickerKind | "none" })
+                    set("references", {
+                      ...style.references,
+                      [file]: e.target.value as StickerKind | "none",
+                    })
                   }
                 >
                   {STICKER_KINDS.map((k) => (
@@ -186,11 +218,40 @@ export function StyleSettings({ initial, defaultStyle }: { initial: Settings; de
 
       {error && <ErrorNote message={error} onClose={() => setError(null)} />}
 
+      <Card className="space-y-3 p-5">
+        <h2 className="font-display text-xl font-semibold">Supprimer ce style</h2>
+        {canDelete ? (
+          <>
+            <p className="text-sm text-ink-soft">
+              Les albums qui s&apos;en servaient repassent au style par défaut. Les stickers déjà
+              produits gardent son nom dans leur historique, et le dossier <code>{folder}</code>{" "}
+              reste sur le disque : l&apos;app ne supprime pas des images que tu as choisies à la
+              main.
+            </p>
+            <ConfirmButton
+              label="Supprimer le style"
+              question={`« ${saved.name} » ? Son dossier d'images restera.`}
+              confirmLabel="Supprimer"
+              onConfirm={remove}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-ink-soft">
+            C&apos;est ton seul style : la bibliothèque ne peut pas être vide. Crée-en un autre
+            d&apos;abord.
+          </p>
+        )}
+      </Card>
+
       {dirty && (
         <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
           <div className="on-dark flex items-center gap-3 rounded-full bg-navy py-2 pl-5 pr-2 text-white shadow-xl">
             <span className="text-sm">Modifications non enregistrées</span>
-            <Button variant="ghost" className="text-white/80 hover:bg-white/10 hover:text-white" onClick={() => setSettings(saved)}>
+            <Button
+              variant="ghost"
+              className="text-white/80 hover:bg-white/10 hover:text-white"
+              onClick={() => setStyle(saved)}
+            >
               Annuler
             </Button>
             <Button variant="primary" onClick={save} disabled={busy}>
